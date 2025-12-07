@@ -25,9 +25,8 @@ import {
   Tab,
   Tabs,
   Badge,
-  IconButton,
-  Tooltip,
-  Grid
+  Grid,
+  ListItemButton
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -35,7 +34,6 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -248,25 +246,24 @@ const FieldMapper: React.FC = () => {
     const isSelected = selectedField === p;
 
     return (
-        <ListItem 
-            key={p} 
-            button 
-            selected={isSelected}
-            onClick={() => setSelectedField(p)}
-            sx={{ 
-                borderRadius: 1, 
-                mb: 0.5,
-                borderLeft: isSelected ? '4px solid #1976d2' : '4px solid transparent',
-                backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.08)' : 'transparent'
-            }}
-        >
-            <ListItemIcon sx={{ minWidth: 36 }}>
-                {isMapped ? <CheckCircleIcon color="success" fontSize="small" /> : <ErrorOutlineIcon color="action" fontSize="small" />}
-            </ListItemIcon>
-            <ListItemText 
-                primary={<Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: isSelected ? 'bold' : 'normal' }}>{p}</Typography>}
-                secondary={hasAI ? <Stack direction="row" alignItems="center" spacing={0.5}><AutoFixHighIcon sx={{ fontSize: 12 }} color="primary"/><Typography variant="caption" color="primary">AI Enabled</Typography></Stack> : null}
-            />
+        <ListItem key={p} disablePadding sx={{ mb: 0.5 }}>
+            <ListItemButton 
+                selected={isSelected}
+                onClick={() => setSelectedField(p)}
+                sx={{ 
+                    borderRadius: 1, 
+                    borderLeft: isSelected ? '4px solid #1976d2' : '4px solid transparent',
+                    backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.08)' : 'transparent'
+                }}
+            >
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                    {isMapped ? <CheckCircleIcon color="success" fontSize="small" /> : <ErrorOutlineIcon color="action" fontSize="small" />}
+                </ListItemIcon>
+                <ListItemText 
+                    primary={<Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: isSelected ? 'bold' : 'normal' }}>{p}</Typography>}
+                    secondary={hasAI ? <Stack direction="row" alignItems="center" spacing={0.5}><AutoFixHighIcon sx={{ fontSize: 12 }} color="primary"/><Typography variant="caption" color="primary">AI Enabled</Typography></Stack> : null}
+                />
+            </ListItemButton>
         </ListItem>
     );
   };
@@ -311,7 +308,7 @@ const FieldMapper: React.FC = () => {
                           <Divider sx={{ mb: 2 }} />
                           
                           <Grid container spacing={2}>
-                              <Grid item xs={12}>
+                              <Grid size={12}>
                                   <FormControl fullWidth size="small">
                                       <InputLabel>选择数据表 ({tableLabel})</InputLabel>
                                       <Select
@@ -323,7 +320,7 @@ const FieldMapper: React.FC = () => {
                                       </Select>
                                   </FormControl>
                               </Grid>
-                              <Grid item xs={12}>
+                              <Grid size={12}>
                                   <FormControl fullWidth size="small" disabled={!currentTable}>
                                       <InputLabel>对应数据库列</InputLabel>
                                       <Select
@@ -355,7 +352,7 @@ const FieldMapper: React.FC = () => {
                           
                           <Grid container spacing={3}>
                               {/* Row 1: Small Inputs */}
-                              <Grid item xs={12} md={4}>
+                              <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
                                       fullWidth 
                                       size="small" 
@@ -365,7 +362,7 @@ const FieldMapper: React.FC = () => {
                                       onChange={(e) => updateAIInstruction(selectedField, 'length', e.target.value, setAIConfig)}
                                   />
                               </Grid>
-                              <Grid item xs={12} md={4}>
+                              <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
                                       fullWidth 
                                       size="small" 
@@ -375,7 +372,7 @@ const FieldMapper: React.FC = () => {
                                       onChange={(e) => updateAIInstruction(selectedField, 'format', e.target.value, setAIConfig)}
                                   />
                               </Grid>
-                              <Grid item xs={12} md={4}>
+                              <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
                                       fullWidth 
                                       size="small" 
@@ -387,7 +384,7 @@ const FieldMapper: React.FC = () => {
                               </Grid>
 
                               {/* Row 2: Large Description Input */}
-                              <Grid item xs={12}>
+                              <Grid size={12}>
                                   <TextField 
                                       fullWidth 
                                       multiline 
