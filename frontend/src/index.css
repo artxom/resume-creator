@@ -1,0 +1,4 @@
+/* Clear default styles to allow MUI to control the base styling. */
+body {
+  margin: 0;
+}

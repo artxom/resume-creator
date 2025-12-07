@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:13-alpine
+    container_name: resume_creator_db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=resume_creator
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+
+  backend:
+    container_name: resume_creator_backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/resume_creator
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  frontend:
+    container_name: resume_creator_frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    command: npm run dev -- --host
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000/api/v1}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
