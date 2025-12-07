@@ -9,13 +9,15 @@ load_dotenv()
 
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
 if not API_KEY:
-    print("Warning: DEEPSEEK_API_KEY not found in environment variables.")
+    print("Warning: DEEPSEEK_API_KEY not found in environment variables. AI features will be disabled.")
 
 # Configure DeepSeek (OpenAI Compatible)
-client = AsyncOpenAI(
-    api_key=API_KEY,
-    base_url="https://api.deepseek.com"
-)
+client = None
+if API_KEY:
+    client = AsyncOpenAI(
+        api_key=API_KEY,
+        base_url="https://api.deepseek.com"
+    )
 
 class AIEngine:
     def __init__(self, model_name: str = "deepseek-chat"):
@@ -33,7 +35,9 @@ class AIEngine:
         """
         Generates content for specific fields based on existing record data and user instructions.
         """
-        
+        if not client:
+             return {"error": "Server Configuration Error: DEEPSEEK_API_KEY is missing. AI features are unavailable."}
+
         # Helper to handle datetime objects for JSON serialization
         def json_serial(obj):
             if hasattr(obj, 'isoformat'):

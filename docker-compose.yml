@@ -23,6 +23,8 @@ services:
       - ./backend:/app
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/resume_creator
     depends_on:
@@ -39,7 +41,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000/api/v1}
+      - VITE_API_URL=${VITE_API_URL:-http://38.60.91.23:8000/api/v1}
     volumes:
       - ./frontend:/app
       - /app/node_modules

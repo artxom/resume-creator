@@ -20,6 +20,8 @@ services:
       dockerfile: Dockerfile
     # Production: No --reload
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/resume_creator
       # Add the server's public IP to allowed origins just in case
