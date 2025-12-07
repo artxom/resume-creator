@@ -3,6 +3,8 @@ import type { ChangeEvent } from 'react';
 import { Box, Button, Card, CardContent, Typography, TextField, CircularProgress, Alert } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+
 export default function DataImporter() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [tableName, setTableName] = useState<string>('');
@@ -32,7 +34,7 @@ export default function DataImporter() {
     formData.append('table_name', tableName.trim());
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/data/upload/excel', {
+      const response = await fetch(`${API_BASE_URL}/data/upload/excel`, {
         method: 'POST',
         body: formData,
       });
