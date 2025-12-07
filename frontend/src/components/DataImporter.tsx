@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import { Box, Button, Card, CardContent, Typography, TextField, CircularProgress, Alert } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 export default function DataImporter() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

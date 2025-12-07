@@ -35,7 +35,7 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 interface MappingData {
   [key: string]: string; // placeholder -> column
