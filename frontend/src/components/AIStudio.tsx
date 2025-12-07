@@ -14,7 +14,6 @@ import {
     Card,
     CardContent,
     CardActions,
-    Chip,
     Alert,
     Snackbar
 } from '@mui/material';
@@ -155,7 +154,7 @@ const AIStudio: React.FC = () => {
         <Box sx={{ flexGrow: 1, p: 2 }}>
             <Grid container spacing={3}>
                 {/* 1. Context Selection */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>1. 选择上下文</Typography>
                         <FormControl fullWidth margin="normal">
@@ -195,7 +194,7 @@ const AIStudio: React.FC = () => {
                 </Grid>
 
                 {/* 2. Prompt Engineering */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>2. AI 指令</Typography>
                         <TextField
@@ -233,7 +232,7 @@ const AIStudio: React.FC = () => {
                 </Grid>
 
                 {/* 3. Review & Apply */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>3. 结果预览与采纳</Typography>
                         {generatedData ? (

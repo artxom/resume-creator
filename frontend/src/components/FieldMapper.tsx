@@ -19,7 +19,6 @@ import {
   Alert,
   CircularProgress,
   Grid,
-  Divider,
   Chip
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
@@ -55,7 +54,6 @@ const FieldMapper: React.FC = () => {
   const [projectMapping, setProjectMapping] = useState<MappingData>({});
 
   // UI States
-  const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [parsing, setParsing] = useState<boolean>(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' } | null>(null);
@@ -65,7 +63,7 @@ const FieldMapper: React.FC = () => {
     fetch(`${API_BASE_URL}/data/tables`)
       .then(res => res.json())
       .then(data => setTables(data.tables || []))
-      .catch(err => setSnackbar({ open: true, message: '初始化数据失败', severity: 'error' }));
+      .catch(() => setSnackbar({ open: true, message: '初始化数据失败', severity: 'error' }));
   }, []);
 
   // 2. Helper to fetch columns for a table
@@ -203,7 +201,7 @@ const FieldMapper: React.FC = () => {
         <>
             <Grid container spacing={3}>
                 {/* Step 2A: Person Mapping */}
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                     <Paper sx={{ p: 3, height: '100%' }}>
                         <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             👤 人员详情映射
@@ -257,7 +255,7 @@ const FieldMapper: React.FC = () => {
                 </Grid>
 
                 {/* Step 2B: Project Mapping */}
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                     <Paper sx={{ p: 3, height: '100%' }}>
                         <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             🏗️ 项目列表映射 (循环)

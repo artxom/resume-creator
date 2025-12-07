@@ -12,9 +12,8 @@ import {
   Alert,
   Button
 } from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material/Select';
-import type { GridColDef, GridRowId, GridRowModesModel, GridEventListener, GridRowEditStopReasons } from '@mui/x-data-grid';
-import { GridRowModes, DataGrid, GridActionsCellItem } from '@mui/x-data-grid';
+import type { GridColDef, GridRowId, GridRowModesModel, GridEventListener } from '@mui/x-data-grid';
+import { GridRowModes, DataGrid, GridActionsCellItem, GridRowEditStopReasons } from '@mui/x-data-grid';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Close';
@@ -184,7 +183,7 @@ const DataManager: React.FC = () => {
         })),
         ...(pkColumn ? [{
           field: 'actions',
-          type: 'actions',
+          type: 'actions' as any, // Cast to any or GridColType to fix type error
           headerName: 'Actions',
           width: 100,
           cellClassName: 'actions',

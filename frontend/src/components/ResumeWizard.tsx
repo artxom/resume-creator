@@ -17,11 +17,7 @@ import {
   Alert,
   TextField,
   CircularProgress,
-  List,
-  ListItem,
-  ListItemText,
   Chip,
-  Divider,
   Stack,
   Autocomplete
 } from '@mui/material';
@@ -39,23 +35,6 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/
 interface PersonRow {
   id: string | number;
   [key: string]: any;
-}
-
-interface WizardState {
-  activeStep: number;
-  // Step 0: Person & Template
-  personTable: string;
-  personId: string;
-  templateFile: File | null;
-  // Step 1: Projects
-  projectTable: string;
-  projectIds: string[];
-  // Step 2: Context & AI
-  context: Record<string, any>;
-  missingFields: string[];
-  aiPrompt: string;
-  // Step 3: Result
-  isGenerated: boolean;
 }
 
 const steps = ['选择人员与模板', '选择项目经历', 'AI 智能补全', '生成文档'];
