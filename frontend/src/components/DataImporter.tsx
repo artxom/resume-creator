@@ -45,7 +45,7 @@ export default function DataImporter() {
         result = await response.json();
       } else {
         // Handle non-JSON response (e.g. 502 Bad Gateway HTML)
-        const text = await response.text();
+        await response.text();
         throw new Error(`服务器错误 (${response.status}): ${response.statusText}`);
       }
 
