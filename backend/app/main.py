@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import time
 import uuid
 from typing import Dict, Any, List, Optional
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import inspect, text, Column, Integer, String, JSON
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel
 from docxtpl import DocxTemplate
 
@@ -22,6 +24,24 @@ app = FastAPI(
     description="API for the automated resume generation system.",
     version="3.4.0",
 )
+
+# --- Database Startup Retry Logic ---
+MAX_RETRIES = 10
+RETRY_DELAY = 3  # seconds
+
+for i in range(MAX_RETRIES):
+    try:
+        # Try to create tables to verify connection
+        Base.metadata.create_all(bind=engine)
+        print("Database connection established and tables created.")
+        break
+    except OperationalError as e:
+        if i < MAX_RETRIES - 1:
+            print(f"Database unavailable, retrying in {RETRY_DELAY} seconds... (Attempt {i+1}/{MAX_RETRIES})")
+            time.sleep(RETRY_DELAY)
+        else:
+            print("Could not connect to database after multiple attempts.")
+            raise e
 
 # CORS Middleware
 origins = [

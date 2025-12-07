@@ -39,7 +39,15 @@ export default function DataImporter() {
         body: formData,
       });
 
-      const result = await response.json();
+      let result;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        result = await response.json();
+      } else {
+        // Handle non-JSON response (e.g. 502 Bad Gateway HTML)
+        const text = await response.text();
+        throw new Error(`服务器错误 (${response.status}): ${response.statusText}`);
+      }
 
       if (!response.ok) {
         throw new Error(result.detail || '上传失败，请检查后端服务。');
