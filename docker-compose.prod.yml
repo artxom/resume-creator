@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:13-alpine
+    container_name: resume_creator_db_prod
+    restart: always
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=resume_creator
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data/
+    networks:
+      - app-network-prod
+
+  backend:
+    container_name: resume_creator_backend_prod
+    restart: always
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Production: No --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/resume_creator
+      # Add the server's public IP to allowed origins just in case
+      - BACKEND_CORS_ORIGINS=["http://localhost", "http://38.60.91.23"]
+    depends_on:
+      - db
+    networks:
+      - app-network-prod
+
+  frontend:
+    container_name: resume_creator_frontend_prod
+    restart: always
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        # Crucial: Set API URL to relative path. 
+        # Nginx will proxy /api/v1 to the backend.
+        - VITE_API_URL=/api/v1
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network-prod
+
+networks:
+  app-network-prod:
+    driver: bridge
+
+volumes:
+  postgres_data_prod:

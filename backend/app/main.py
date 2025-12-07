@@ -26,11 +26,23 @@ app = FastAPI(
     version="3.4.0",
 )
 
+import os
+
 # CORS Middleware
 origins = [
     "http://localhost",
     "http://localhost:5173",
 ]
+
+# Load allowed origins from environment variable if present
+if os.getenv("BACKEND_CORS_ORIGINS"):
+    try:
+        env_origins = json.loads(os.getenv("BACKEND_CORS_ORIGINS"))
+        if isinstance(env_origins, list):
+            origins.extend(env_origins)
+    except json.JSONDecodeError:
+        print("Warning: Could not parse BACKEND_CORS_ORIGINS")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
