@@ -26,7 +26,9 @@ class AIEngine:
         self, 
         record_data: Dict[str, Any], 
         target_fields: List[str], 
-        user_prompt: str = ""
+        user_prompt: str = "",
+        field_instructions: Dict[str, Any] = {},
+        model_name: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Generates content for specific fields based on existing record data and user instructions.
@@ -42,6 +44,24 @@ class AIEngine:
             # Safe serialization of record data
             context_str = json.dumps(record_data, ensure_ascii=False, indent=2, default=json_serial)
             fields_str = json.dumps(target_fields, ensure_ascii=False)
+
+            # Construct Field Instructions String
+            field_instr_str = ""
+            if field_instructions:
+                field_instr_str += "\n# Specific Field Instructions\n"
+                for field, instr in field_instructions.items():
+                    # Only include instructions for fields we are targeting, OR global context fields if useful
+                    # Here we simply check if the instruction key matches one of the target fields 
+                    # OR if it's a generic instruction we want to pass.
+                    # Given the Frontend sends a map keyed by placeholder, we should check intersection.
+                    if field in target_fields or any(t.startswith(field) for t in target_fields):
+                         field_instr_str += f"- **{field}**:\n"
+                         if isinstance(instr, dict):
+                             for k, v in instr.items():
+                                 if v: field_instr_str += f"  - {k.capitalize()}: {v}\n"
+            
+            # Use dynamic model if provided, else default
+            target_model = model_name if model_name else self.model_name
 
             user_message = f"""
             # Context
@@ -59,12 +79,14 @@ class AIEngine:
             # User Instruction
             {user_prompt if user_prompt else "Please fill the missing fields professionally based on the context provided above. Infer missing details logically but remain truthful to the provided context."}
 
+            {field_instr_str}
+
             # Output Format
             Return ONLY a valid JSON object.
             """
 
             response = await client.chat.completions.create(
-                model=self.model_name,
+                model=target_model,
                 messages=[
                     {"role": "system", "content": self.system_instruction},
                     {"role": "user", "content": user_message}

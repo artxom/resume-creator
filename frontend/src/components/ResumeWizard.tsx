@@ -62,6 +62,8 @@ const ResumeWizard: React.FC = () => {
   const [detailedMissing, setDetailedMissing] = useState<string[]>([]);
 
   const [aiPrompt, setAiPrompt] = useState('');
+  const [fieldInstructions, setFieldInstructions] = useState<Record<string, any>>({});
+  const [modelName, setModelName] = useState('deepseek-chat');
   
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' } | null>(null);
@@ -202,7 +204,23 @@ const ResumeWizard: React.FC = () => {
 
         const assembledContext = await assembleRes.json();
 
-  
+        // 1.5 Fetch Field Instructions (New)
+        let mergedInstructions = {};
+        if (personTable) {
+            try {
+                const pRes = await fetch(`${API_BASE_URL}/mappings/${personTable}`);
+                const pData = await pRes.json();
+                if (pData.ai_instructions) mergedInstructions = { ...mergedInstructions, ...pData.ai_instructions };
+            } catch(e) { console.error(e); }
+        }
+        if (projectTable) {
+            try {
+                const projRes = await fetch(`${API_BASE_URL}/mappings/${projectTable}`);
+                const projData = await projRes.json();
+                if (projData.ai_instructions) mergedInstructions = { ...mergedInstructions, ...projData.ai_instructions };
+            } catch(e) { console.error(e); }
+        }
+        setFieldInstructions(mergedInstructions);
 
         // 2. Parse Template (Get Placeholders)
 
@@ -364,7 +382,11 @@ const ResumeWizard: React.FC = () => {
 
             target_fields: targets,
 
-            user_prompt: aiPrompt
+            user_prompt: aiPrompt,
+
+            field_instructions: fieldInstructions,
+
+            model_name: modelName
 
           })
 
@@ -708,6 +730,18 @@ const ResumeWizard: React.FC = () => {
              告诉 AI 如何处理这些空缺（例如：强调领导力、技术栈偏向 Python 等）。
           </Typography>
           
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>选择 AI 模型</InputLabel>
+            <Select
+                value={modelName}
+                label="选择 AI 模型"
+                onChange={(e) => setModelName(e.target.value)}
+            >
+                <MenuItem value="deepseek-chat">DeepSeek Chat (通用)</MenuItem>
+                <MenuItem value="deepseek-coder">DeepSeek Coder (代码/技术)</MenuItem>
+            </Select>
+          </FormControl>
+
           <TextField
             label="输入 Prompt 指令..."
             multiline

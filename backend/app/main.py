@@ -1,19 +1,16 @@
-import pandas as pd
+import os
+import json
 import io
 import uuid
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text, Column, Integer, String, JSON
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-import json
+from typing import Dict, Any, List, Optional
+
+import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import inspect, text, Column, Integer, String, JSON
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
 from docxtpl import DocxTemplate
 
 from .database import engine, Base, SessionLocal, get_db
@@ -25,8 +22,6 @@ app = FastAPI(
     description="API for the automated resume generation system.",
     version="3.4.0",
 )
-
-import os
 
 # CORS Middleware
 origins = [
@@ -58,6 +53,7 @@ class FieldMapping(Base):
     id = Column(Integer, primary_key=True, index=True)
     table_name = Column(String, unique=True, index=True)
     mapping_data = Column(JSON)
+    ai_instructions = Column(JSON, default={})
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
@@ -86,6 +82,7 @@ class RowData(BaseModel):
 class MappingCreate(BaseModel):
     table_name: str
     mapping_data: Dict[str, str]
+    ai_instructions: Optional[Dict[str, Any]] = {}
 
 class AICompletionRequest(BaseModel):
     table_name: str
@@ -103,6 +100,8 @@ class ContextFillRequest(BaseModel):
     context: Dict[str, Any]
     target_fields: List[str]
     user_prompt: Optional[str] = None
+    field_instructions: Optional[Dict[str, Any]] = {}
+    model_name: Optional[str] = "deepseek-chat"
 
 # --- Helper Functions ---
 def _get_primary_key(inspector, table_name: str, schema: str = "public") -> Optional[str]:
@@ -270,7 +269,9 @@ async def fill_context_endpoint(req: ContextFillRequest):
         generated_data = await ai_engine.generate_completion(
             record_data=req.context,
             target_fields=req.target_fields,
-            user_prompt=req.user_prompt
+            user_prompt=req.user_prompt,
+            field_instructions=req.field_instructions,
+            model_name=req.model_name
         )
         return generated_data
     except Exception as e:
@@ -392,16 +393,17 @@ def get_standard_fields():
 def get_mapping(table_name: str, db: Session = Depends(get_db)):
     mapping = db.query(FieldMapping).filter(FieldMapping.table_name == table_name).first()
     if not mapping:
-        return {"table_name": table_name, "mapping_data": {}}
-    return {"table_name": table_name, "mapping_data": mapping.mapping_data}
+        return {"table_name": table_name, "mapping_data": {}, "ai_instructions": {}}
+    return {"table_name": table_name, "mapping_data": mapping.mapping_data, "ai_instructions": mapping.ai_instructions or {}}
 
 @app.post("/api/v1/mappings")
 def save_mapping(mapping: MappingCreate, db: Session = Depends(get_db)):
     db_mapping = db.query(FieldMapping).filter(FieldMapping.table_name == mapping.table_name).first()
     if db_mapping:
         db_mapping.mapping_data = mapping.mapping_data
+        db_mapping.ai_instructions = mapping.ai_instructions
     else:
-        db_mapping = FieldMapping(table_name=mapping.table_name, mapping_data=mapping.mapping_data)
+        db_mapping = FieldMapping(table_name=mapping.table_name, mapping_data=mapping.mapping_data, ai_instructions=mapping.ai_instructions)
         db.add(db_mapping)
     
     try:
