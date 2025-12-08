@@ -75,6 +75,19 @@ docker-compose up -d --build
 
 ## 6. 未来规划 (Roadmap v2.x)
 
-*   **v2.1**: 安全性增强 (Basic Auth / JWT)。
-*   **v2.2**: UI/UX 细节打磨 (更友好的 Loading 状态，移动端适配)。
-*   **v2.3**: 多模板管理中心。
+### v2.1 - Template Management & Security (In Progress)
+*   **[Smart Mapper]**: 升级智能映射页面
+    *   新增：模板库列表视图 (查看已配置的 Word 模板)。
+    *   新增：详细信息查看 (查看上传的 Word 文件及字段配置详情)。
+    *   新增：在线编辑与保存映射配置。
+*   **[Resume Wizard]**: 优化简历向导
+    *   变更：移除上传步骤，改为从模板库中选择已有模板。
+*   **[Data Manager]**: 数据安全
+    *   变更：屏蔽 `field_mapping` 表的直接访问/删除权限，防止误操作。
+
+### v2.2 - UI/UX 细节打磨
+*   更友好的 Loading 状态。
+*   移动端适配。
+
+### v2.3 - 多模板管理中心
+*   (已部分并在 v2.1 实现)

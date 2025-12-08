@@ -9,8 +9,8 @@ import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import inspect, text, Column, Integer, String, JSON
-from sqlalchemy.orm import Session
+from sqlalchemy import inspect, text, Column, Integer, String, JSON, LargeBinary, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Session, relationship
 from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel
 from docxtpl import DocxTemplate
@@ -67,13 +67,30 @@ app.add_middleware(
 )
 
 # --- SQLAlchemy Models ---
+class Template(Base):
+    __tablename__ = "templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    filename = Column(String)
+    file_content = Column(LargeBinary)
+    
+    mappings = relationship("FieldMapping", back_populates="template", cascade="all, delete-orphan")
+
 class FieldMapping(Base):
     __tablename__ = "field_mappings"
 
     id = Column(Integer, primary_key=True, index=True)
-    table_name = Column(String, unique=True, index=True)
+    template_id = Column(Integer, ForeignKey("templates.id"))
+    table_name = Column(String, index=True)
     mapping_data = Column(JSON)
     ai_instructions = Column(JSON, default={})
+    
+    template = relationship("Template", back_populates="mappings")
+
+    __table_args__ = (
+        UniqueConstraint('template_id', 'table_name', name='uq_template_table'),
+    )
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
@@ -100,9 +117,18 @@ class RowData(BaseModel):
     data: Dict[str, Any]
 
 class MappingCreate(BaseModel):
+    template_id: int
     table_name: str
     mapping_data: Dict[str, str]
     ai_instructions: Optional[Dict[str, Any]] = {}
+
+class TemplateResponse(BaseModel):
+    id: int
+    name: str
+    filename: str
+
+    class Config:
+        orm_mode = True
 
 class AICompletionRequest(BaseModel):
     table_name: str
@@ -111,6 +137,7 @@ class AICompletionRequest(BaseModel):
     user_prompt: Optional[str] = ""
 
 class ContextAssembleRequest(BaseModel):
+    template_id: int
     person_table: str
     person_id: str
     project_table: Optional[str] = None
@@ -133,6 +160,7 @@ def _get_primary_key(inspector, table_name: str, schema: str = "public") -> Opti
 
 def _build_resume_context(
     db: Session,
+    template_id: int,
     person_table: str,
     person_id: str,
     project_table: Optional[str] = None,
@@ -141,8 +169,11 @@ def _build_resume_context(
     """
     Helper function to assemble the resume context from database records.
     """
-    # 1. Fetch Mappings
-    person_map_record = db.query(FieldMapping).filter(FieldMapping.table_name == person_table).first()
+    # 1. Fetch Mappings for the specific template
+    person_map_record = db.query(FieldMapping).filter(
+        FieldMapping.template_id == template_id,
+        FieldMapping.table_name == person_table
+    ).first()
     person_mapping = person_map_record.mapping_data if person_map_record else {}
 
     # 2. Fetch Data from DB
@@ -165,7 +196,10 @@ def _build_resume_context(
     # 2.2 Fetch Project Data
     project_rows = []
     if project_table and project_ids:
-        project_map_record = db.query(FieldMapping).filter(FieldMapping.table_name == project_table).first()
+        project_map_record = db.query(FieldMapping).filter(
+            FieldMapping.template_id == template_id,
+            FieldMapping.table_name == project_table
+        ).first()
         project_mapping = project_map_record.mapping_data if project_map_record else {}
 
         project_pk = _get_primary_key(inspector, project_table)
@@ -268,7 +302,8 @@ def assemble_context_endpoint(req: ContextAssembleRequest, db: Session = Depends
     """
     try:
         context = _build_resume_context(
-            db, 
+            db,
+            req.template_id,
             req.person_table, 
             req.person_id, 
             req.project_table, 
@@ -299,16 +334,19 @@ async def fill_context_endpoint(req: ContextFillRequest):
 
 @app.post("/api/v1/generate/render_from_context")
 async def render_resume_from_context(
+    template_id: int = Form(...),
     context_str: str = Form(...),
-    file: UploadFile = File(...)
+    db: Session = Depends(get_db)
 ):
     """
-    Step 4: Render the final docx using the provided JSON context (as string) and template file.
+    Step 4: Render the final docx using the provided JSON context (as string) and template ID.
     """
-    if not file.filename.endswith('.docx'):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type. Please upload a .docx file.")
-    
     try:
+        # Fetch Template
+        template = db.query(Template).filter(Template.id == template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+
         # Parse JSON context
         try:
             context = json.loads(context_str)
@@ -316,8 +354,7 @@ async def render_resume_from_context(
             raise HTTPException(status_code=400, detail="Invalid JSON format for context_str")
 
         # Render Template
-        doc_content = await file.read()
-        buffer = io.BytesIO(doc_content)
+        buffer = io.BytesIO(template.file_content)
         tpl = DocxTemplate(buffer)
         
         # docxtpl needs a dict
@@ -330,7 +367,7 @@ async def render_resume_from_context(
         return StreamingResponse(
             output_buffer,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f"attachment; filename=resume_generated.docx"}
+            headers={"Content-Disposition": f"attachment; filename={template.filename}_generated.docx"}
         )
     except HTTPException as he:
         raise he
@@ -340,90 +377,113 @@ async def render_resume_from_context(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- Legacy Resume Generation (Monolithic) ---
-@app.post("/api/v1/generate/resume")
-async def generate_resume(
-    person_table: str = Form(...),
-    person_id: str = Form(...),
-    project_table: Optional[str] = Form(None),
-    project_ids: Optional[List[str]] = Form(None),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
+# --- Template Management Endpoints ---
+
+@app.get("/api/v1/templates", response_model=List[TemplateResponse])
+def list_templates(db: Session = Depends(get_db)):
+    return db.query(Template).all()
+
+@app.post("/api/v1/templates", response_model=TemplateResponse)
+async def upload_template(file: UploadFile = File(...), name: str = Form(None), db: Session = Depends(get_db)):
     if not file.filename.endswith('.docx'):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type. Please upload a .docx file.")
     
     try:
-        # 1-3. Build Context (Reusing logic)
-        # Note: project_ids comes as a list of strings from Form, but might need parsing if it comes as a single string
-        # FastAPI handles List[str] in Form well if sent as multiple fields. 
+        content = await file.read()
+        template_name = name if name else file.filename
         
-        context = _build_resume_context(db, person_table, person_id, project_table, project_ids)
+        # Create Template Record
+        new_template = Template(name=template_name, filename=file.filename, file_content=content)
+        db.add(new_template)
+        db.commit()
+        db.refresh(new_template)
         
-        # 4. Render Template
-        doc_content = await file.read()
-        buffer = io.BytesIO(doc_content)
-        tpl = DocxTemplate(buffer)
-        tpl.render(context)
-        
-        output_buffer = io.BytesIO()
-        tpl.save(output_buffer)
-        output_buffer.seek(0)
-        
-        return StreamingResponse(
-            output_buffer,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f"attachment; filename=resume_generated.docx"}
-        )
-
-    except HTTPException as he:
-        raise he
+        return new_template
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Template Parsing Endpoints ---
-@app.post("/api/v1/templates/parse")
-async def parse_template(file: UploadFile = File(...)):
-    if not file.filename.endswith('.docx'):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type. Please upload a .docx file.")
+@app.delete("/api/v1/templates/{template_id}")
+def delete_template(template_id: int, db: Session = Depends(get_db)):
+    template = db.query(Template).filter(Template.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
     
+    db.delete(template)
+    db.commit()
+    return {"message": "Template deleted successfully"}
+
+@app.get("/api/v1/templates/{template_id}/parse")
+def parse_saved_template(template_id: int, db: Session = Depends(get_db)):
+    template = db.query(Template).filter(Template.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+        
     try:
-        contents = await file.read()
-        placeholders = extract_placeholders_in_order(contents)
+        placeholders = extract_placeholders_in_order(template.file_content)
         
         singleton_placeholders = [p for p in placeholders if not p.strip().startswith('p.')]
         loop_placeholders = [p for p in placeholders if p.strip().startswith('p.')]
         
         return {
-            "message": "Template parsed successfully",
+            "template_id": template.id,
+            "filename": template.filename,
             "singleton_placeholders": singleton_placeholders,
             "loop_placeholders": loop_placeholders
         }
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/templates/{template_id}/mappings")
+def get_template_mappings(template_id: int, db: Session = Depends(get_db)):
+    mappings = db.query(FieldMapping).filter(FieldMapping.template_id == template_id).all()
+    return [
+        {
+            "table_name": m.table_name,
+            "mapping_data": m.mapping_data,
+            "ai_instructions": m.ai_instructions or {}
+        }
+        for m in mappings
+    ]
 
 # --- Field Mapping Endpoints ---
 @app.get("/api/v1/mappings/fields")
 def get_standard_fields():
     return {"fields": STANDARD_RESUME_FIELDS}
 
-@app.get("/api/v1/mappings/{table_name}")
-def get_mapping(table_name: str, db: Session = Depends(get_db)):
-    mapping = db.query(FieldMapping).filter(FieldMapping.table_name == table_name).first()
+@app.get("/api/v1/mappings/{template_id}/{table_name}")
+def get_mapping(template_id: int, table_name: str, db: Session = Depends(get_db)):
+    mapping = db.query(FieldMapping).filter(
+        FieldMapping.template_id == template_id,
+        FieldMapping.table_name == table_name
+    ).first()
     if not mapping:
-        return {"table_name": table_name, "mapping_data": {}, "ai_instructions": {}}
-    return {"table_name": table_name, "mapping_data": mapping.mapping_data, "ai_instructions": mapping.ai_instructions or {}}
+        return {"table_name": table_name, "template_id": template_id, "mapping_data": {}, "ai_instructions": {}}
+    return {"table_name": table_name, "template_id": template_id, "mapping_data": mapping.mapping_data, "ai_instructions": mapping.ai_instructions or {}}
 
 @app.post("/api/v1/mappings")
 def save_mapping(mapping: MappingCreate, db: Session = Depends(get_db)):
-    db_mapping = db.query(FieldMapping).filter(FieldMapping.table_name == mapping.table_name).first()
+    # Check if template exists
+    template = db.query(Template).filter(Template.id == mapping.template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    db_mapping = db.query(FieldMapping).filter(
+        FieldMapping.template_id == mapping.template_id,
+        FieldMapping.table_name == mapping.table_name
+    ).first()
+    
     if db_mapping:
         db_mapping.mapping_data = mapping.mapping_data
         db_mapping.ai_instructions = mapping.ai_instructions
     else:
-        db_mapping = FieldMapping(table_name=mapping.table_name, mapping_data=mapping.mapping_data, ai_instructions=mapping.ai_instructions)
+        db_mapping = FieldMapping(
+            template_id=mapping.template_id,
+            table_name=mapping.table_name,
+            mapping_data=mapping.mapping_data,
+            ai_instructions=mapping.ai_instructions
+        )
         db.add(db_mapping)
     
     try:
@@ -469,13 +529,19 @@ async def upload_excel_to_table(table_name: str = Form(...), file: UploadFile = 
 def get_table_names():
     try:
         inspector = inspect(engine)
-        return {"tables": inspector.get_table_names(schema="public")}
+        all_tables = inspector.get_table_names(schema="public")
+        # Filter out system tables
+        visible_tables = [t for t in all_tables if t not in ['field_mappings', 'templates']]
+        return {"tables": visible_tables}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get("/api/v1/data/tables/{table_name}")
 def get_table_data(table_name: str):
     try:
+        if table_name in ['field_mappings', 'templates']:
+             raise HTTPException(status_code=403, detail="Access denied to system tables.")
+
         inspector = inspect(engine)
         if not inspector.has_table(table_name, schema="public"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Table '{table_name}' not found.")
@@ -503,6 +569,9 @@ def get_table_data(table_name: str):
 @app.delete("/api/v1/data/tables/{table_name}")
 def delete_table(table_name: str):
     try:
+        if table_name in ['field_mappings', 'templates']:
+             raise HTTPException(status_code=403, detail="Access denied to system tables.")
+             
         inspector = inspect(engine)
         if not inspector.has_table(table_name, schema="public"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Table '{table_name}' not found.")

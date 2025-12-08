@@ -21,13 +21,13 @@ import {
   Stack,
   Autocomplete
 } from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DownloadIcon from '@mui/icons-material/Download';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import DescriptionIcon from '@mui/icons-material/Description';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -37,11 +37,18 @@ interface PersonRow {
   [key: string]: any;
 }
 
+interface Template {
+    id: number;
+    name: string;
+    filename: string;
+}
+
 const steps = ['选择人员与模板', '选择项目经历', 'AI 智能补全', '生成文档'];
 
 const ResumeWizard: React.FC = () => {
   // --- Global Data ---
   const [tables, setTables] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [personRows, setPersonRows] = useState<PersonRow[]>([]);
   const [projectRows, setProjectRows] = useState<PersonRow[]>([]);
 
@@ -51,7 +58,7 @@ const ResumeWizard: React.FC = () => {
   // Initialize from localStorage if available
   const [personTable, setPersonTable] = useState(localStorage.getItem('last_person_table') || '');
   const [personId, setPersonId] = useState('');
-  const [templateFile, setTemplateFile] = useState<File | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | string>('');
   
   const [projectTable, setProjectTable] = useState(localStorage.getItem('last_project_table') || '');
   const [projectIds, setProjectIds] = useState<string[]>([]);
@@ -74,6 +81,11 @@ const ResumeWizard: React.FC = () => {
       .then(res => res.json())
       .then(data => setTables(data.tables || []))
       .catch(() => showMsg('无法加载数据表列表', 'error'));
+
+    fetch(`${API_BASE_URL}/templates`)
+      .then(res => res.json())
+      .then(data => setTemplates(data || []))
+      .catch(() => showMsg('无法加载模板列表', 'error'));
   }, []);
 
   // --- Load Rows when Table Changes & Persist ---
@@ -131,7 +143,7 @@ const ResumeWizard: React.FC = () => {
 
   const handleNext = async () => {
     if (activeStep === 0) {
-      if (!personTable || !personId || !templateFile) {
+      if (!personTable || !personId || !selectedTemplateId) {
         showMsg('请完成所有必选项', 'error');
         return;
       }
@@ -151,21 +163,13 @@ const ResumeWizard: React.FC = () => {
   };
 
     const handleReset = () => {
-
       setActiveStep(0);
-
       setContext({});
-
       setMissingFields([]);
-
       setDetailedMissing([]);
-
       setPersonId('');
-
-      setTemplateFile(null); // Reset template file upon starting a new resume
-
+      setSelectedTemplateId('');
       setProjectIds([]);
-
     };
 
   
@@ -173,187 +177,107 @@ const ResumeWizard: React.FC = () => {
     // --- Core Logic: Context Assembly & Analysis ---
 
     const performContextAnalysis = async () => {
-
       setLoading(true);
-
       try {
-
         // 1. Assemble Context (Get Data)
-
         const assembleRes = await fetch(`${API_BASE_URL}/context/assemble`, {
-
           method: 'POST',
-
           headers: { 'Content-Type': 'application/json' },
-
           body: JSON.stringify({
-
+            template_id: Number(selectedTemplateId),
             person_table: personTable,
-
             person_id: personId,
-
             project_table: projectTable || null,
-
             project_ids: projectIds
-
           })
-
         });
 
         if (!assembleRes.ok) throw new Error('数据组装失败');
-
         const assembledContext = await assembleRes.json();
 
         // 1.5 Fetch Field Instructions (New)
         let mergedInstructions = {};
-        if (personTable) {
+        // Note: With new backend logic, instructions are fetched based on Template ID implicitly by backend?
+        // Wait, the backend assemble_context returns data. 
+        // We still need instructions for AI filling step.
+        // We should fetch mappings by template_id now.
+        if (selectedTemplateId) {
             try {
-                const pRes = await fetch(`${API_BASE_URL}/mappings/${personTable}`);
-                const pData = await pRes.json();
-                if (pData.ai_instructions) mergedInstructions = { ...mergedInstructions, ...pData.ai_instructions };
-            } catch(e) { console.error(e); }
-        }
-        if (projectTable) {
-            try {
-                const projRes = await fetch(`${API_BASE_URL}/mappings/${projectTable}`);
-                const projData = await projRes.json();
-                if (projData.ai_instructions) mergedInstructions = { ...mergedInstructions, ...projData.ai_instructions };
+                const mapRes = await fetch(`${API_BASE_URL}/templates/${selectedTemplateId}/mappings`);
+                const mappings = await mapRes.json();
+                mappings.forEach((m: any) => {
+                    if (m.ai_instructions) {
+                        mergedInstructions = { ...mergedInstructions, ...m.ai_instructions };
+                    }
+                });
             } catch(e) { console.error(e); }
         }
         setFieldInstructions(mergedInstructions);
 
         // 2. Parse Template (Get Placeholders)
-
-        if (!templateFile) throw new Error('模板文件丢失');
-
-        const formData = new FormData();
-
-        formData.append('file', templateFile);
-
-        
-
-        const parseRes = await fetch(`${API_BASE_URL}/templates/parse`, {
-
-          method: 'POST',
-
-          body: formData
-
-        });
+        const parseRes = await fetch(`${API_BASE_URL}/templates/${selectedTemplateId}/parse`);
 
         if (!parseRes.ok) throw new Error('模板解析失败');
 
         const parseData = await parseRes.json();
-
         const singletons: string[] = parseData.singleton_placeholders || [];
-
         const loops: string[] = parseData.loop_placeholders || [];
 
   
 
         // 3. Compare & Find Missing
-
         const missing: string[] = [];
-
         const missingDetails: string[] = []; // Human readable list
 
-        
-
         // 3.1 Check Singletons
-
         singletons.forEach(key => {
-
           if (!assembledContext[key] || assembledContext[key].toString().trim() === '') {
-
             missing.push(key);
-
             missingDetails.push(key);
-
           }
-
         });
 
-  
-
         // 3.2 Check Loop Fields (Projects)
-
         if (assembledContext.projects && Array.isArray(assembledContext.projects)) {
-
             const projectMissingCounts: Record<string, number> = {};
-
             let anyProjectMissing = false;
 
-  
-
             assembledContext.projects.forEach((proj: any) => {
-
                 loops.forEach(loopKey => {
-
                     // loopKey is like "p.project_name", context key is "project_name"
-
                     const key = loopKey.replace(/^p\./, '');
-
                     if (!proj[key] || proj[key].toString().trim() === '') {
-
                         anyProjectMissing = true;
-
                         projectMissingCounts[key] = (projectMissingCounts[key] || 0) + 1;
-
                     }
-
                 });
-
             });
 
-  
-
             if (anyProjectMissing) {
-
                 missing.push('projects'); // Still instruct AI to fix 'projects' as a whole
-
                 Object.entries(projectMissingCounts).forEach(([field, count]) => {
-
                     missingDetails.push(`项目经历: ${field} (${count}处缺失)`);
-
                 });
-
             }
-
         }
-
   
 
         setContext(assembledContext);
-
         setMissingFields(missing); // For Logic (passed to AI)
-
         setDetailedMissing(missingDetails); // For UI
 
-        
-
         // Set default prompt based on missing fields
-
         if (missing.length > 0) {
-
             setAiPrompt(`请根据候选人的背景信息，补全以下缺失内容：${missingDetails.join(', ')}。对于项目经历，请根据项目名称和候选人技能推断合理的描述。`);
-
         } else {
-
             setAiPrompt('当前没有检测到缺失字段，但你可以让我优化现有内容。');
-
         }
 
-        
-
       } catch (e: any) {
-
         showMsg(e.message, 'error');
-
       } finally {
-
         setLoading(false);
-
       }
-
     };
 
   
@@ -361,93 +285,48 @@ const ResumeWizard: React.FC = () => {
     // --- Core Logic: AI Fill ---
 
     const handleAiFill = async () => {
-
       setLoading(true);
-
       try {
-
         const targets = missingFields.length > 0 ? missingFields : ['summary'];
-
-  
-
         const res = await fetch(`${API_BASE_URL}/ai/fill_context`, {
-
           method: 'POST',
-
           headers: { 'Content-Type': 'application/json' },
-
           body: JSON.stringify({
-
             context: context,
-
             target_fields: targets,
-
             user_prompt: aiPrompt,
-
             field_instructions: fieldInstructions,
-
             model_name: modelName
-
           })
-
         });
 
-        
-
         if (!res.ok) throw new Error('AI 补全请求失败');
-
         const aiData = await res.json();
 
-        
-
         // Merge AI data into Context
-
         setContext(prev => ({
-
           ...prev,
-
           ...aiData
-
         }));
 
-        
-
         // Update missing fields (remove filled ones)
-
         // Logic: if 'projects' was returned, assume project issues are fixed
-
         const filledKeys = Object.keys(aiData);
-
         
-
         const newMissing = missingFields.filter(k => !filledKeys.includes(k));
-
         setMissingFields(newMissing);
 
-        
-
         if (filledKeys.includes('projects')) {
-
              setDetailedMissing(prev => prev.filter(s => !s.startsWith('项目经历')));
-
         }
-
         setDetailedMissing(prev => prev.filter(s => !filledKeys.includes(s)));
-
   
-
         showMsg('AI 补全完成！请检查结果', 'success');
-
       } catch (e: any) {
-
         showMsg(e.message, 'error');
-
       } finally {
-
         setLoading(false);
-
       }
-
     };
 
   
@@ -455,79 +334,42 @@ const ResumeWizard: React.FC = () => {
     // --- Core Logic: Generate Download ---
 
     const handleDownload = async () => {
-
-      if (!templateFile) return;
-
+      if (!selectedTemplateId) return;
       setLoading(true);
-
       try {
-
         const formData = new FormData();
-
-        formData.append('file', templateFile);
-
+        formData.append('template_id', String(selectedTemplateId));
         formData.append('context_str', JSON.stringify(context));
-
   
-
         const res = await fetch(`${API_BASE_URL}/generate/render_from_context`, {
-
           method: 'POST',
-
           body: formData
-
         });
-
   
-
         if (!res.ok) throw new Error('生成文档失败');
-
   
-
         const blob = await res.blob();
-
         const url = window.URL.createObjectURL(blob);
-
         const a = document.createElement('a');
-
         a.href = url;
-
         
-
         // 获取当前候选人信息并格式化文件名
-
         const selectedPerson = personRows.find(p => String(p.id) === String(personId));
-
         const personName = selectedPerson ? getDisplayName(selectedPerson) : '未知姓名';
-
         const personIdentity = selectedPerson ? getIdentity(selectedPerson) : '未知工号';
-
   
-
         a.download = `简历-${personName}-${personIdentity}.docx`;
-
         
-
         document.body.appendChild(a);
-
         a.click();
-
         a.remove();
-
         
-
         showMsg('下载已开始', 'success');
-
       } catch (e: any) {
-
         showMsg(e.message, 'error');
-
       } finally {
-
         setLoading(false);
-
       }
-
     };
 
   // --- Render Steps ---
@@ -581,19 +423,22 @@ const ResumeWizard: React.FC = () => {
       </Grid>
       <Grid size={{ xs: 12, md: 6 }}>
         <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <Typography variant="h6" gutterBottom>上传模板</Typography>
-          <Button
-            variant="outlined"
-            component="label"
-            startIcon={<CloudUploadIcon />}
-            fullWidth
-            sx={{ py: 2 }}
-          >
-            {templateFile ? templateFile.name : '选择 .docx 模板'}
-            <input type="file" hidden accept=".docx" onChange={(e) => e.target.files && setTemplateFile(e.target.files[0])} />
-          </Button>
+          <Typography variant="h6" gutterBottom>选择简历模板</Typography>
+          
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>模板库</InputLabel>
+            <Select 
+                value={selectedTemplateId} 
+                label="模板库" 
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                startAdornment={<DescriptionIcon color="action" sx={{ mr: 1 }} />}
+            >
+              {templates.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+          
           <Typography variant="caption" sx={{ mt: 1, color: 'text.secondary' }}>
-            确保模板包含正确的 Jinja2 占位符 (例如 {"{{ summary }}"})
+            请先在“智能字段映射”页面上传并配置模板。
           </Typography>
         </Paper>
       </Grid>

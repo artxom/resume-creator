@@ -26,7 +26,12 @@ import {
   Tabs,
   Badge,
   Grid,
-  ListItemButton
+  ListItemButton,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -34,8 +39,17 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DescriptionIcon from '@mui/icons-material/Description';
+import AddIcon from '@mui/icons-material/Add';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+
+interface Template {
+    id: number;
+    name: string;
+    filename: string;
+}
 
 interface MappingData {
   [key: string]: string; // placeholder -> column
@@ -58,8 +72,10 @@ interface TableColumnMap {
 
 const FieldMapper: React.FC = () => {
   const [tables, setTables] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   
   // Selection States
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [personTable, setPersonTable] = useState<string>('');
   const [projectTable, setProjectTable] = useState<string>('');
   
@@ -83,18 +99,34 @@ const FieldMapper: React.FC = () => {
   const [activeTab, setActiveTab] = useState(0); // 0: Person, 1: Project
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
-  const [parsing, setParsing] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' } | null>(null);
 
-  // 1. Initialize: Fetch tables
+  // Initial Data Load
   useEffect(() => {
+    fetchTables();
+    fetchTemplates();
+  }, []);
+
+  const fetchTables = () => {
     fetch(`${API_BASE_URL}/data/tables`)
       .then(res => res.json())
       .then(data => setTables(data.tables || []))
-      .catch(() => setSnackbar({ open: true, message: '初始化数据失败', severity: 'error' }));
-  }, []);
+      .catch(() => showMsg('Failed to load tables', 'error'));
+  };
 
-  // 2. Helper to fetch columns for a table
+  const fetchTemplates = () => {
+      fetch(`${API_BASE_URL}/templates`)
+        .then(res => res.json())
+        .then(data => setTemplates(data))
+        .catch(() => showMsg('Failed to load templates', 'error'));
+  };
+
+  const showMsg = (msg: string, severity: 'success' | 'error') => {
+      setSnackbar({ open: true, message: msg, severity });
+  };
+
+  // Fetch columns for a table
   const fetchColumns = async (tableName: string) => {
     if (!tableName || tableColumns[tableName]) return;
     try {
@@ -107,120 +139,158 @@ const FieldMapper: React.FC = () => {
     }
   };
 
-  // Load Saved Mapping
-  const loadMapping = async (tableName: string, setMap: any, setAI: any) => {
+  // Load Template Data when selected
+  const handleTemplateSelect = async (templateId: number) => {
+      setSelectedTemplateId(templateId);
+      setLoading(true);
+      setTemplateParsed(false);
+      
+      // Reset State
+      setPersonTable('');
+      setProjectTable('');
+      setPersonMapping({});
+      setProjectMapping({});
+      setPersonAI({});
+      setProjectAI({});
+
       try {
-          const res = await fetch(`${API_BASE_URL}/mappings/${tableName}`);
-          const data = await res.json();
-          if (data.mapping_data) setMap(data.mapping_data);
-          if (data.ai_instructions) setAI(data.ai_instructions);
+          // 1. Parse Template
+          const parseRes = await fetch(`${API_BASE_URL}/templates/${templateId}/parse`);
+          if (!parseRes.ok) throw new Error("Failed to parse template");
+          const parseData = await parseRes.json();
+          
+          setSingletonPlaceholders(parseData.singleton_placeholders || []);
+          setLoopPlaceholders(parseData.loop_placeholders || []);
+          
+          // 2. Load Existing Mappings
+          const mapRes = await fetch(`${API_BASE_URL}/templates/${templateId}/mappings`);
+          if (mapRes.ok) {
+              const mappings = await mapRes.json();
+              // Heuristic to distribute mappings to Person/Project slots
+              // We check if keys overlap with singleton or loop placeholders
+              const singletons = new Set(parseData.singleton_placeholders || []);
+              
+              mappings.forEach((m: any) => {
+                  const keys = Object.keys(m.mapping_data || {});
+                  const isPerson = keys.some(k => singletons.has(k));
+                  
+                  // If it has singleton keys, it's likely the person table.
+                  // Otherwise, if it has loop keys (or startswith p.), it's project.
+                  // Fallback: Just put it in Person if empty, else Project.
+                  
+                  if (isPerson || !personTable) {
+                      setPersonTable(m.table_name);
+                      setPersonMapping(m.mapping_data || {});
+                      setPersonAI(m.ai_instructions || {});
+                      fetchColumns(m.table_name);
+                  } else {
+                      setProjectTable(m.table_name);
+                      setProjectMapping(m.mapping_data || {});
+                      setProjectAI(m.ai_instructions || {});
+                      fetchColumns(m.table_name);
+                  }
+              });
+          }
+
+          setTemplateParsed(true);
+          // Auto select first field
+          if (parseData.singleton_placeholders?.length > 0) {
+              setSelectedField(parseData.singleton_placeholders[0]);
+              setActiveTab(0);
+          } else if (parseData.loop_placeholders?.length > 0) {
+              setSelectedField(parseData.loop_placeholders[0]);
+              setActiveTab(1);
+          }
+
       } catch (err) {
-          console.error("Failed to load mapping", err);
+          showMsg('Failed to load template data', 'error');
+      } finally {
+          setLoading(false);
       }
   };
 
-  useEffect(() => {
-    if (personTable) {
-        fetchColumns(personTable);
-        loadMapping(personTable, setPersonMapping, setPersonAI);
-    }
-  }, [personTable]);
-
-  useEffect(() => {
-    if (projectTable) {
-        fetchColumns(projectTable);
-        loadMapping(projectTable, setProjectMapping, setProjectAI);
-    }
-  }, [projectTable]);
-
-  // 3. Handle Template Upload
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadTemplate = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
     const file = event.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
-
-    setParsing(true);
+    
+    setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/templates/parse`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error('Failed to parse template');
-      const data = await response.json();
-      
-      setSingletonPlaceholders(data.singleton_placeholders || []);
-      setLoopPlaceholders(data.loop_placeholders || []);
-      setTemplateParsed(true);
-      
-      // Auto-select first field if available
-      if (data.singleton_placeholders?.length > 0) {
-          setSelectedField(data.singleton_placeholders[0]);
-          setActiveTab(0);
-      } else if (data.loop_placeholders?.length > 0) {
-          setSelectedField(data.loop_placeholders[0]);
-          setActiveTab(1);
-      }
-
-      setSnackbar({ open: true, message: '模板解析成功！', severity: 'success' });
+        const res = await fetch(`${API_BASE_URL}/templates`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) throw new Error("Upload failed");
+        const newTemplate = await res.json();
+        setTemplates(prev => [...prev, newTemplate]);
+        handleTemplateSelect(newTemplate.id);
+        showMsg('Template uploaded successfully', 'success');
     } catch (err) {
-      setSnackbar({ open: true, message: '模板解析失败', severity: 'error' });
+        showMsg('Upload failed', 'error');
     } finally {
-      setParsing(false);
+        setLoading(false);
     }
   };
 
+  const handleDeleteTemplate = async (e: React.MouseEvent, id: number) => {
+      e.stopPropagation();
+      if (!confirm("Are you sure you want to delete this template?")) return;
+      
+      try {
+          const res = await fetch(`${API_BASE_URL}/templates/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error("Delete failed");
+          setTemplates(prev => prev.filter(t => t.id !== id));
+          if (selectedTemplateId === id) {
+              setSelectedTemplateId(null);
+              setTemplateParsed(false);
+          }
+          showMsg('Template deleted', 'success');
+      } catch (err) {
+          showMsg('Delete failed', 'error');
+      }
+  };
+
   const handleSave = async () => {
+    if (!selectedTemplateId) return;
     if (!personTable && !projectTable) {
-        setSnackbar({ open: true, message: '请至少选择一个数据源表', severity: 'error' });
+        showMsg('请至少选择一个数据源表', 'error');
         return;
     }
     
     setSaving(true);
     try {
       if (personTable) {
-          await fetch(`${API_BASE_URL}/mappings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              table_name: personTable,
-              mapping_data: personMapping,
-              ai_instructions: personAI
-            })
-          });
+          await saveMappingRequest(personTable, personMapping, personAI);
       }
-
       if (projectTable && projectTable !== personTable) {
-          await fetch(`${API_BASE_URL}/mappings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                table_name: projectTable,
-                mapping_data: projectMapping,
-                ai_instructions: projectAI
-            })
-          });
+          await saveMappingRequest(projectTable, projectMapping, projectAI);
       } else if (projectTable && projectTable === personTable) {
+          // Merge if same table
           const mergedMapping = { ...personMapping, ...projectMapping };
           const mergedAI = { ...personAI, ...projectAI };
-          await fetch(`${API_BASE_URL}/mappings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                table_name: personTable,
-                mapping_data: mergedMapping,
-                ai_instructions: mergedAI
-            })
-          });
+          await saveMappingRequest(personTable, mergedMapping, mergedAI);
       }
 
-      setSnackbar({ open: true, message: '所有映射及AI配置已保存！', severity: 'success' });
+      showMsg('Configuration saved!', 'success');
     } catch (err) {
-      setSnackbar({ open: true, message: '保存映射失败', severity: 'error' });
+      showMsg('Failed to save configuration', 'error');
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveMappingRequest = async (tableName: string, mapData: MappingData, aiData: AIInstructionsMap) => {
+      await fetch(`${API_BASE_URL}/mappings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: selectedTemplateId,
+          table_name: tableName,
+          mapping_data: mapData,
+          ai_instructions: aiData
+        })
+      });
   };
 
   const updateAIInstruction = (
@@ -283,6 +353,11 @@ const FieldMapper: React.FC = () => {
       const currentMappedCol = mapping[selectedField] || '';
       const currentAI = aiConfig[selectedField] || { length: '', format: '', description: '', other: '' };
 
+      const handleTableChange = (val: string) => {
+          setTable(val);
+          fetchColumns(val);
+      };
+
       return (
           <Box sx={{ p: 0, height: '100%', overflowY: 'auto' }}>
               <Box sx={{ p: 3, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -314,7 +389,7 @@ const FieldMapper: React.FC = () => {
                                       <Select
                                           value={currentTable}
                                           label={`选择数据表 (${tableLabel})`}
-                                          onChange={(e) => setTable(e.target.value as string)}
+                                          onChange={(e) => handleTableChange(e.target.value as string)}
                                       >
                                           {tables.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                                       </Select>
@@ -336,9 +411,6 @@ const FieldMapper: React.FC = () => {
                                   </FormControl>
                               </Grid>
                           </Grid>
-                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                              如果没有对应的数据库列，可以留空，完全依赖下方的 AI 指令生成内容。
-                          </Typography>
                       </CardContent>
                   </Card>
 
@@ -346,54 +418,37 @@ const FieldMapper: React.FC = () => {
                   <Card variant="outlined" sx={{ bgcolor: '#fafafa' }}>
                       <CardContent>
                           <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <AutoFixHighIcon color="primary" /> AI 智能生成配置 (Meta-Prompting)
+                              <AutoFixHighIcon color="primary" /> AI 智能生成配置
                           </Typography>
                           <Divider sx={{ mb: 2 }} />
                           
                           <Grid container spacing={3}>
-                              {/* Row 1: Small Inputs */}
                               <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
-                                      fullWidth 
-                                      size="small" 
-                                      label="建议长度" 
-                                      placeholder="例: 100字左右" 
+                                      fullWidth size="small" label="建议长度" 
                                       value={currentAI.length} 
                                       onChange={(e) => updateAIInstruction(selectedField, 'length', e.target.value, setAIConfig)}
                                   />
                               </Grid>
                               <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
-                                      fullWidth 
-                                      size="small" 
-                                      label="输出格式" 
-                                      placeholder="例: 纯文本, JSON" 
+                                      fullWidth size="small" label="输出格式" 
                                       value={currentAI.format} 
                                       onChange={(e) => updateAIInstruction(selectedField, 'format', e.target.value, setAIConfig)}
                                   />
                               </Grid>
                               <Grid size={{ xs: 12, md: 4 }}>
                                   <TextField 
-                                      fullWidth 
-                                      size="small" 
-                                      label="其他约束条件" 
-                                      placeholder="例: STAR法则" 
+                                      fullWidth size="small" label="其他约束" 
                                       value={currentAI.other} 
                                       onChange={(e) => updateAIInstruction(selectedField, 'other', e.target.value, setAIConfig)}
                                   />
                               </Grid>
-
-                              {/* Row 2: Large Description Input */}
                               <Grid size={12}>
                                   <TextField 
-                                      fullWidth 
-                                      multiline 
-                                      rows={5} 
-                                      label="核心描述与生成重点" 
-                                      placeholder="告诉 AI 这个字段应该包含什么内容。例如：'总结我的后端开发经验，重点突出 Python 和 AWS 项目，语气要专业自信。'" 
+                                      fullWidth multiline rows={5} label="核心描述与生成重点" 
                                       value={currentAI.description} 
                                       onChange={(e) => updateAIInstruction(selectedField, 'description', e.target.value, setAIConfig)}
-                                      helperText="这是最重要的指令，决定了生成内容的质量。"
                                   />
                               </Grid>
                           </Grid>
@@ -414,77 +469,105 @@ const FieldMapper: React.FC = () => {
                 智能字段映射 (Smart Mapper)
             </Typography>
             <Typography variant="body2" color="text.secondary">
-                配置每个字段的数据来源及 AI 生成规则，以获得最佳简历效果。
+                管理简历模板并配置字段映射。
             </Typography>
           </Box>
-          <Stack direction="row" spacing={2}>
-             <Button
-                component="label"
-                variant="outlined"
-                startIcon={<CloudUploadIcon />}
-            >
-                {templateParsed ? "重新上传模板" : "上传 Word 模板"}
-                <input type="file" hidden accept=".docx" onChange={handleFileUpload} />
-            </Button>
-            {templateParsed && (
-                <Button
-                    variant="contained"
-                    startIcon={<SaveIcon />}
-                    onClick={handleSave}
-                    disabled={saving}
-                >
-                    {saving ? '保存中...' : '保存所有配置'}
+          <Box>
+             {templateParsed && (
+                <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={saving} sx={{ mr: 2 }}>
+                    {saving ? '保存中...' : '保存配置'}
                 </Button>
             )}
-          </Stack>
+             <Button component="label" variant="outlined" startIcon={<AddIcon />}>
+                添加新模板
+                <input type="file" hidden accept=".docx" onChange={handleUploadTemplate} />
+            </Button>
+          </Box>
       </Box>
 
-      {parsing && <Box sx={{ width: '100%', mb: 2 }}><CircularProgress size={20} /> 解析模板中...</Box>}
-
-      {templateParsed ? (
-          <Paper sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden', border: '1px solid #e0e0e0' }}>
-              
-              {/* Left Sidebar */}
-              <Box sx={{ width: 320, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', bgcolor: '#f5f5f5' }}>
-                  <Tabs 
-                    value={activeTab} 
-                    onChange={(_, v) => { setActiveTab(v); setSelectedField(null); }}
-                    variant="fullWidth"
-                    sx={{ bgcolor: '#fff', borderBottom: '1px solid #e0e0e0' }}
-                  >
-                      <Tab label={<Badge badgeContent={singletonPlaceholders.length} color="primary">人员字段</Badge>} />
-                      <Tab label={<Badge badgeContent={loopPlaceholders.length} color="secondary">项目字段</Badge>} />
-                  </Tabs>
-                  
-                  <List sx={{ flexGrow: 1, overflowY: 'auto', p: 1 }}>
-                      {activeTab === 0 && singletonPlaceholders.map(p => renderSidebarItem(p, personMapping, personAI))}
-                      {activeTab === 1 && loopPlaceholders.map(p => renderSidebarItem(p, projectMapping, projectAI))}
-                      
-                      {(activeTab === 0 ? singletonPlaceholders : loopPlaceholders).length === 0 && (
-                          <Typography variant="caption" sx={{ p: 2, display: 'block', textAlign: 'center', color: 'text.secondary' }}>
-                              该类别下无字段
-                          </Typography>
-                      )}
-                  </List>
+      {/* Main Content: Split View */}
+      <Paper sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden', border: '1px solid #e0e0e0' }}>
+          
+          {/* Template List Sidebar */}
+          <Box sx={{ width: 280, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', bgcolor: '#f9f9f9' }}>
+              <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#fff' }}>
+                  <Typography variant="subtitle2" color="text.secondary">TEMPLATE LIBRARY</Typography>
               </Box>
+              <List sx={{ flexGrow: 1, overflowY: 'auto' }}>
+                  {templates.map(tpl => (
+                      <ListItem 
+                        key={tpl.id} 
+                        disablePadding
+                        secondaryAction={
+                            <IconButton edge="end" aria-label="delete" size="small" onClick={(e) => handleDeleteTemplate(e, tpl.id)}>
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        }
+                      >
+                          <ListItemButton selected={selectedTemplateId === tpl.id} onClick={() => handleTemplateSelect(tpl.id)}>
+                              <ListItemIcon sx={{ minWidth: 32 }}>
+                                  <DescriptionIcon fontSize="small" color={selectedTemplateId === tpl.id ? "primary" : "action"} />
+                              </ListItemIcon>
+                              <ListItemText 
+                                primary={tpl.name} 
+                                primaryTypographyProps={{ variant: 'body2', noWrap: true, fontWeight: selectedTemplateId === tpl.id ? 'bold' : 'normal' }}
+                                secondary={tpl.filename}
+                                secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
+                              />
+                          </ListItemButton>
+                      </ListItem>
+                  ))}
+                  {templates.length === 0 && (
+                      <Box sx={{ p: 3, textAlign: 'center' }}>
+                          <Typography variant="caption" color="text.secondary">暂无模板，请点击右上角添加。</Typography>
+                      </Box>
+                  )}
+              </List>
+          </Box>
 
-              {/* Right Detail Panel */}
-              <Box sx={{ flexGrow: 1, bgcolor: '#fff' }}>
-                  {renderDetailPanel()}
-              </Box>
+          {/* Configuration Area */}
+          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+              {loading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                      <CircularProgress />
+                  </Box>
+              ) : !selectedTemplateId ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'text.secondary' }}>
+                      <DescriptionIcon sx={{ fontSize: 60, mb: 2, opacity: 0.3 }} />
+                      <Typography variant="h6">请从左侧选择一个模板</Typography>
+                      <Typography variant="body2">或上传一个新的 Word 模板开始配置</Typography>
+                  </Box>
+              ) : (
+                  <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
+                      {/* Fields Sidebar */}
+                      <Box sx={{ width: 280, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', bgcolor: '#f5f5f5' }}>
+                        <Tabs 
+                            value={activeTab} 
+                            onChange={(_, v) => { setActiveTab(v); setSelectedField(null); }}
+                            variant="fullWidth"
+                            sx={{ bgcolor: '#fff', borderBottom: '1px solid #e0e0e0' }}
+                        >
+                            <Tab label={<Badge badgeContent={singletonPlaceholders.length} color="primary" variant="dot">人员</Badge>} />
+                            <Tab label={<Badge badgeContent={loopPlaceholders.length} color="secondary" variant="dot">项目</Badge>} />
+                        </Tabs>
+                        <List sx={{ flexGrow: 1, overflowY: 'auto', p: 1 }}>
+                            {activeTab === 0 && singletonPlaceholders.map(p => renderSidebarItem(p, personMapping, personAI))}
+                            {activeTab === 1 && loopPlaceholders.map(p => renderSidebarItem(p, projectMapping, projectAI))}
+                        </List>
+                      </Box>
 
-          </Paper>
-      ) : (
-          <Paper sx={{ p: 5, textAlign: 'center', bgcolor: '#f5f5f5', border: '2px dashed #ccc' }}>
-              <CloudUploadIcon sx={{ fontSize: 60, color: '#ccc', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary">
-                  请先上传 Word 简历模板 (.docx) 以开始配置
-              </Typography>
-          </Paper>
-      )}
+                      {/* Config Panel */}
+                      <Box sx={{ flexGrow: 1, bgcolor: '#fff', overflow: 'hidden' }}>
+                          {renderDetailPanel()}
+                      </Box>
+                  </Box>
+              )}
+          </Box>
+
+      </Paper>
 
       {snackbar && (
-        <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
           <Alert onClose={() => setSnackbar(null)} severity={snackbar.severity} sx={{ width: '100%' }}>
             {snackbar.message}
           </Alert>
