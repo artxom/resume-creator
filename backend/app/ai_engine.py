@@ -1,28 +1,33 @@
 import os
 import json
 from typing import Dict, List, Any, Optional
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-# Load environment variables
-load_dotenv()
-
-API_KEY = os.getenv("DEEPSEEK_API_KEY")
-if not API_KEY:
-    print("Warning: DEEPSEEK_API_KEY not found in environment variables. AI features will be disabled.")
-
-# Configure DeepSeek (OpenAI Compatible)
-client = None
-if API_KEY:
-    client = AsyncOpenAI(
-        api_key=API_KEY,
-        base_url="https://api.deepseek.com"
-    )
-
 class AIEngine:
-    def __init__(self, model_name: str = "deepseek-chat"):
-        self.model_name = model_name
+    def __init__(self):
         self.system_instruction = "You are an expert HR consultant and professional resume writer. Your goal is to help users complete their resume data structure with professional, concise, and impactful language. You must always return valid JSON."
+
+    def _get_client(self, api_config: Optional[Dict[str, str]] = None) -> tuple[AsyncOpenAI, str]:
+        """
+        Returns an AsyncOpenAI client and the model name based on provided config.
+        """
+        api_key = None
+        base_url = None
+        model_name = None
+
+        if api_config:
+            api_key = api_config.get("api_key")
+            base_url = api_config.get("base_url")
+            model_name = api_config.get("model_name")
+        
+        if not api_key:
+            raise ValueError("No AI Configuration found. Please configure an AI model in the 'System Settings' (系统设置) page.")
+
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+        return client, model_name
 
     async def generate_completion(
         self, 
@@ -30,14 +35,12 @@ class AIEngine:
         target_fields: List[str], 
         user_prompt: str = "",
         field_instructions: Dict[str, Any] = {},
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        api_config: Optional[Dict[str, str]] = None
     ) -> Dict[str, str]:
         """
         Generates content for specific fields based on existing record data and user instructions.
         """
-        if not client:
-             return {"error": "Server Configuration Error: DEEPSEEK_API_KEY is missing. AI features are unavailable."}
-
         # Helper to handle datetime objects for JSON serialization
         def json_serial(obj):
             if hasattr(obj, 'isoformat'):
@@ -45,6 +48,11 @@ class AIEngine:
             return str(obj)
 
         try:
+            client, config_model_name = self._get_client(api_config)
+            
+            # Use passed model_name if available, otherwise use config's model
+            target_model = model_name if model_name else config_model_name
+
             # Safe serialization of record data
             context_str = json.dumps(record_data, ensure_ascii=False, indent=2, default=json_serial)
             fields_str = json.dumps(target_fields, ensure_ascii=False)
@@ -55,18 +63,12 @@ class AIEngine:
                 field_instr_str += "\n# Specific Field Instructions\n"
                 for field, instr in field_instructions.items():
                     # Only include instructions for fields we are targeting, OR global context fields if useful
-                    # Here we simply check if the instruction key matches one of the target fields 
-                    # OR if it's a generic instruction we want to pass.
-                    # Given the Frontend sends a map keyed by placeholder, we should check intersection.
                     if field in target_fields or any(t.startswith(field) for t in target_fields):
                          field_instr_str += f"- **{field}**:\n"
                          if isinstance(instr, dict):
                              for k, v in instr.items():
                                  if v: field_instr_str += f"  - {k.capitalize()}: {v}\n"
             
-            # Use dynamic model if provided, else default
-            target_model = model_name if model_name else self.model_name
-
             user_message = f"""
             # Context
             You are analyzing a structured resume data record:

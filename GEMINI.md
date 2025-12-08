@@ -75,7 +75,11 @@ docker-compose up -d --build
 
 ## 6. 未来规划 (Roadmap v2.x)
 
-### v2.1 - Template Management & Security (In Progress)
+### v2.1.0 - Multi-AI & Smart Mapping (2025-12-08)
+*   **[新功能]** 新增 AI 模型配置管理页面，支持配置 DeepSeek/Gemini/Qwen 等兼容 OpenAI 协议的多家 AI 提供商 API。
+*   **[Frontend]** AI 实验室和智能简历向导页面，移除硬编码模型，改为从数据库动态加载已配置的 AI 模型进行选择。
+*   **[Backend]** AI 引擎重构，支持根据配置 ID 动态选择并初始化 AI 客户端。
+*   **[Backend]** 智能简历向导的数据组装逻辑 (`_build_resume_context`) 增强，增加自动同名字段映射兜底策略，提升数据填充的容错性和智能化。
 *   **[Smart Mapper]**: 升级智能映射页面
     *   新增：模板库列表视图 (查看已配置的 Word 模板)。
     *   新增：详细信息查看 (查看上传的 Word 文件及字段配置详情)。

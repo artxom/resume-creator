@@ -5,11 +5,13 @@ import StorageIcon from '@mui/icons-material/Storage';
 import LinkIcon from '@mui/icons-material/Link';
 import DescriptionIcon from '@mui/icons-material/Description';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import SettingsIcon from '@mui/icons-material/Settings';
 import DataImporter from './components/DataImporter';
 import DataManager from './components/DataManager';
 import FieldMapper from './components/FieldMapper';
 import ResumeWizard from './components/ResumeWizard';
 import AIStudio from './components/AIStudio';
+import ConfigPage from './components/ConfigPage';
 import './App.css';
 
 interface TabPanelProps {
@@ -69,6 +71,7 @@ function App() {
             <Tab icon={<LinkIcon />} label="字段映射" {...a11yProps(2)} />
             <Tab icon={<DescriptionIcon />} label="智能简历向导" {...a11yProps(3)} />
             <Tab icon={<AutoFixHighIcon />} label="AI 实验室" {...a11yProps(4)} />
+            <Tab icon={<SettingsIcon />} label="系统设置" {...a11yProps(5)} />
           </Tabs>
         </Box>
         <TabPanel value={value} index={0}>
@@ -85,6 +88,9 @@ function App() {
         </TabPanel>
         <TabPanel value={value} index={4}>
           <AIStudio />
+        </TabPanel>
+        <TabPanel value={value} index={5}>
+          <ConfigPage />
         </TabPanel>
       </Container>
     </Box>

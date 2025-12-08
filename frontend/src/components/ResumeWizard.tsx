@@ -28,6 +28,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import DescriptionIcon from '@mui/icons-material/Description';
+import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -43,6 +44,12 @@ interface Template {
     filename: string;
 }
 
+interface APIConfig {
+    id: number;
+    provider: string;
+    model_name: string;
+}
+
 const steps = ['选择人员与模板', '选择项目经历', 'AI 智能补全', '生成文档'];
 
 const ResumeWizard: React.FC = () => {
@@ -51,6 +58,7 @@ const ResumeWizard: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [personRows, setPersonRows] = useState<PersonRow[]>([]);
   const [projectRows, setProjectRows] = useState<PersonRow[]>([]);
+  const [configs, setConfigs] = useState<APIConfig[]>([]);
 
   // --- Wizard State ---
   const [activeStep, setActiveStep] = useState(0);
@@ -70,7 +78,7 @@ const ResumeWizard: React.FC = () => {
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [fieldInstructions, setFieldInstructions] = useState<Record<string, any>>({});
-  const [modelName, setModelName] = useState('deepseek-chat');
+  const [selectedConfigId, setSelectedConfigId] = useState<number | ''>('');
   
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' } | null>(null);
@@ -86,6 +94,16 @@ const ResumeWizard: React.FC = () => {
       .then(res => res.json())
       .then(data => setTemplates(data || []))
       .catch(() => showMsg('无法加载模板列表', 'error'));
+
+    fetch(`${API_BASE_URL}/configs`)
+        .then(res => res.json())
+        .then(data => {
+            setConfigs(data);
+            if (data.length > 0) {
+                setSelectedConfigId(data[0].id);
+            }
+        })
+        .catch(() => showMsg('无法加载 AI 模型配置', 'warning'));
   }, []);
 
   // --- Load Rows when Table Changes & Persist ---
@@ -296,7 +314,7 @@ const ResumeWizard: React.FC = () => {
             target_fields: targets,
             user_prompt: aiPrompt,
             field_instructions: fieldInstructions,
-            model_name: modelName
+            config_id: selectedConfigId || undefined
           })
         });
 
@@ -576,14 +594,23 @@ const ResumeWizard: React.FC = () => {
           </Typography>
           
           <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>选择 AI 模型</InputLabel>
+            <InputLabel id="config-select-label">选择 AI 模型</InputLabel>
             <Select
-                value={modelName}
+                labelId="config-select-label"
+                value={selectedConfigId}
                 label="选择 AI 模型"
-                onChange={(e) => setModelName(e.target.value)}
+                onChange={(e) => setSelectedConfigId(Number(e.target.value))}
             >
-                <MenuItem value="deepseek-chat">DeepSeek Chat (通用)</MenuItem>
-                <MenuItem value="deepseek-coder">DeepSeek Coder (代码/技术)</MenuItem>
+                {configs.map(config => (
+                    <MenuItem key={config.id} value={config.id}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SettingsSuggestIcon fontSize="small" color="action" />
+                            <Typography variant="body2">{config.provider.toUpperCase()}</Typography>
+                            <Chip label={config.model_name} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                        </Box>
+                    </MenuItem>
+                ))}
+                {configs.length === 0 && <MenuItem disabled>请先在“系统设置”中添加模型</MenuItem>}
             </Select>
           </FormControl>
 
@@ -602,7 +629,7 @@ const ResumeWizard: React.FC = () => {
             variant="contained" 
             fullWidth 
             onClick={handleAiFill}
-            disabled={loading}
+            disabled={loading || !selectedConfigId}
             startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
             sx={{ py: 1.5 }}
           >

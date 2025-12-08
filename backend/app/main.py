@@ -92,6 +92,16 @@ class FieldMapping(Base):
         UniqueConstraint('template_id', 'table_name', name='uq_template_table'),
     )
 
+class APIConfig(Base):
+    __tablename__ = "api_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, index=True)  # deepseek, gemini, qwen
+    api_key = Column(String)
+    base_url = Column(String)
+    model_name = Column(String)
+    is_active = Column(Integer, default=1)  # 1: active, 0: inactive
+
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
 
@@ -130,11 +140,25 @@ class TemplateResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class APIConfigCreate(BaseModel):
+    provider: str
+    api_key: str
+    base_url: str
+    model_name: str
+
+class APIConfigResponse(APIConfigCreate):
+    id: int
+    is_active: int
+
+    class Config:
+        orm_mode = True
+
 class AICompletionRequest(BaseModel):
     table_name: str
     record_id: str
     target_fields: List[str]
     user_prompt: Optional[str] = ""
+    config_id: Optional[int] = None
 
 class ContextAssembleRequest(BaseModel):
     template_id: int
@@ -148,7 +172,7 @@ class ContextFillRequest(BaseModel):
     target_fields: List[str]
     user_prompt: Optional[str] = None
     field_instructions: Optional[Dict[str, Any]] = {}
-    model_name: Optional[str] = "deepseek-chat"
+    config_id: Optional[int] = None
 
 # --- Helper Functions ---
 def _get_primary_key(inspector, table_name: str, schema: str = "public") -> Optional[str]:
@@ -169,12 +193,23 @@ def _build_resume_context(
     """
     Helper function to assemble the resume context from database records.
     """
-    # 1. Fetch Mappings for the specific template
+    # 1. Fetch Template & Mappings
+    template = db.query(Template).filter(Template.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
     person_map_record = db.query(FieldMapping).filter(
         FieldMapping.template_id == template_id,
         FieldMapping.table_name == person_table
     ).first()
     person_mapping = person_map_record.mapping_data if person_map_record else {}
+
+    # Extract placeholders from template for auto-mapping
+    try:
+        placeholders = extract_placeholders_in_order(template.file_content)
+    except Exception as e:
+        print(f"Warning: Could not parse template for placeholders: {e}")
+        placeholders = []
 
     # 2. Fetch Data from DB
     inspector = inspect(engine)
@@ -211,19 +246,35 @@ def _build_resume_context(
         with engine.connect() as conn:
             project_results = conn.execute(p_stmt_projects, {"pids": tuple(project_ids)}).mappings().all()
             for res in project_results:
-                project_row = {}
-                # Apply Project Mapping
-                for placeholder, col_name in project_mapping.items():
-                    clean_placeholder = placeholder.strip()
-                    if clean_placeholder.startswith('p.'): # Only loop fields for projects
-                        # Remove 'p.' prefix for context key
-                        context_key = clean_placeholder[2:] 
-                        if col_name and col_name in res:
-                            project_row[context_key] = res[col_name]
-                        else:
-                            project_row[context_key] = "" # Tolerant behavior
-                if project_row:
-                    project_rows.append(project_row)
+                project_row_data = dict(res)
+                project_context_row = {}
+                
+                # Identify loop placeholders (starting with p.)
+                loop_placeholders = [p for p in placeholders if p.strip().startswith('p.')]
+                
+                for lp in loop_placeholders:
+                    clean_key = lp.strip()[2:] # remove 'p.'
+                    
+                    # 1. Try Explicit Mapping
+                    mapped_col = project_mapping.get(lp)
+                    if mapped_col and mapped_col in project_row_data:
+                        project_context_row[clean_key] = project_row_data[mapped_col]
+                    # 2. Try Auto-Mapping (exact match)
+                    elif clean_key in project_row_data:
+                        project_context_row[clean_key] = project_row_data[clean_key]
+                    # 3. Try Auto-Mapping (fuzzy: ignore case, _)
+                    else:
+                        found = False
+                        for col in project_row_data.keys():
+                            if col.lower().replace("_", "") == clean_key.lower().replace("_", ""):
+                                project_context_row[clean_key] = project_row_data[col]
+                                found = True
+                                break
+                        if not found:
+                            project_context_row[clean_key] = ""
+
+                if project_context_row:
+                    project_rows.append(project_context_row)
 
     # 3. Build Context
     context = {}
@@ -231,14 +282,34 @@ def _build_resume_context(
     # Add projects list to context
     context['projects'] = project_rows
     
-    # 3.1 Apply Person Mapping
-    for placeholder, col_name in person_mapping.items():
-        clean_placeholder = placeholder.strip()
-        if not clean_placeholder.startswith('p.'): # Only singleton fields
-            if col_name and col_name in person_row:
-                context[clean_placeholder] = person_row[col_name]
-            else:
-                context[clean_placeholder] = "" # Tolerant behavior
+    print(f"DEBUG: Person Table: {person_table}, ID: {person_id}")
+    print(f"DEBUG: Explicit Mapping: {person_mapping}")
+    
+    # 3.1 Apply Person Mapping (Explicit + Auto)
+    for p in placeholders:
+        clean_p = p.strip()
+        if clean_p.startswith('p.'): 
+            continue # Skip project loop fields
+            
+        # 1. Try Explicit Mapping
+        if clean_p in person_mapping and person_mapping[clean_p] in person_row:
+             context[clean_p] = person_row[person_mapping[clean_p]]
+        # 2. Try Auto-Mapping (exact match)
+        elif clean_p in person_row:
+             context[clean_p] = person_row[clean_p]
+        # 3. Try Auto-Mapping (fuzzy)
+        else:
+             found = False
+             for col in person_row.keys():
+                 # Match "full_name" with "fullname" or "Full Name"
+                 if col.lower().replace("_", "") == clean_p.lower().replace("_", ""):
+                     context[clean_p] = person_row[col]
+                     found = True
+                     break
+             if not found:
+                 print(f"DEBUG: Auto-map failed for {clean_p}")
+                 context[clean_p] = "" # Default to empty
+
     
     # Serialize datetime objects and Handle None
     def clean_data(obj):
@@ -252,6 +323,7 @@ def _build_resume_context(
             return ""
         return obj
 
+    print(f"DEBUG: Final Context Keys: {list(context.keys())}")
     return clean_data(context)
 
 # --- API Endpoints ---
@@ -259,11 +331,69 @@ def _build_resume_context(
 def read_root():
     return {"message": "Welcome to the QuantumLeap Synthesis Engine API!"}
 
+# --- Configuration Endpoints ---
+@app.get("/api/v1/configs", response_model=List[APIConfigResponse])
+def get_configs(db: Session = Depends(get_db)):
+    return db.query(APIConfig).all()
+
+@app.post("/api/v1/configs", response_model=APIConfigResponse)
+def create_or_update_config(config: APIConfigCreate, db: Session = Depends(get_db)):
+    # Check if provider config exists
+    db_config = db.query(APIConfig).filter(APIConfig.provider == config.provider).first()
+    if db_config:
+        db_config.api_key = config.api_key
+        db_config.base_url = config.base_url
+        db_config.model_name = config.model_name
+        db_config.is_active = 1
+    else:
+        db_config = APIConfig(**config.dict())
+        db.add(db_config)
+    
+    db.commit()
+    db.refresh(db_config)
+    return db_config
+
+@app.delete("/api/v1/configs/{config_id}")
+def delete_config(config_id: int, db: Session = Depends(get_db)):
+    config = db.query(APIConfig).filter(APIConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Config not found")
+    db.delete(config)
+    db.commit()
+    return {"message": "Config deleted"}
+
+@app.post("/api/v1/configs/test")
+async def test_connection(config: APIConfigCreate):
+    try:
+        # Temporary test using a simple prompt
+        test_result = await ai_engine.generate_completion(
+            record_data={"test": "ping"},
+            target_fields=["response"],
+            user_prompt="Reply with 'pong' if you receive this.",
+            api_config=config.dict()
+        )
+        if "error" in test_result:
+             raise HTTPException(status_code=400, detail=test_result["error"])
+        return {"status": "success", "message": "Connection successful", "response": test_result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # --- AI Generation Endpoints ---
 @app.post("/api/v1/ai/generate")
 async def generate_ai_content(request: AICompletionRequest, db: Session = Depends(get_db)):
     try:
-        # 1. Fetch the record
+        # 1. Fetch Config if provided
+        api_config = None
+        if request.config_id:
+            db_config = db.query(APIConfig).filter(APIConfig.id == request.config_id).first()
+            if db_config:
+                api_config = {
+                    "api_key": db_config.api_key,
+                    "base_url": db_config.base_url,
+                    "model_name": db_config.model_name
+                }
+
+        # 2. Fetch the record
         inspector = inspect(engine)
         pk_column = _get_primary_key(inspector, request.table_name)
         if not pk_column:
@@ -277,11 +407,12 @@ async def generate_ai_content(request: AICompletionRequest, db: Session = Depend
                 raise HTTPException(status_code=404, detail="Record not found")
             record_data = dict(result)
             
-        # 2. Call AI Engine
+        # 3. Call AI Engine
         generated_data = await ai_engine.generate_completion(
             record_data=record_data,
             target_fields=request.target_fields,
-            user_prompt=request.user_prompt
+            user_prompt=request.user_prompt,
+            api_config=api_config
         )
         
         return generated_data
@@ -316,17 +447,28 @@ def assemble_context_endpoint(req: ContextAssembleRequest, db: Session = Depends
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/ai/fill_context")
-async def fill_context_endpoint(req: ContextFillRequest):
+async def fill_context_endpoint(req: ContextFillRequest, db: Session = Depends(get_db)):
     """
     Step 3: AI Enrichment. Takes the assembled context and fills missing fields.
     """
     try:
+        # Fetch Config if provided
+        api_config = None
+        if req.config_id:
+            db_config = db.query(APIConfig).filter(APIConfig.id == req.config_id).first()
+            if db_config:
+                api_config = {
+                    "api_key": db_config.api_key,
+                    "base_url": db_config.base_url,
+                    "model_name": db_config.model_name
+                }
+        
         generated_data = await ai_engine.generate_completion(
             record_data=req.context,
             target_fields=req.target_fields,
             user_prompt=req.user_prompt,
             field_instructions=req.field_instructions,
-            model_name=req.model_name
+            api_config=api_config
         )
         return generated_data
     except Exception as e:
