@@ -16,16 +16,34 @@ class AIEngine:
         model_name = None
 
         if api_config:
-            api_key = api_config.get("api_key")
-            base_url = api_config.get("base_url")
-            model_name = api_config.get("model_name")
+            api_key = api_config.get("api_key", "").strip()
+            base_url = api_config.get("base_url", "").strip()
+            model_name = api_config.get("model_name", "").strip()
         
         if not api_key:
             raise ValueError("No AI Configuration found. Please configure an AI model in the 'System Settings' (系统设置) page.")
 
+        # --- OpenRouter Specific Fixes ---
+        default_headers = {}
+        if "openrouter.ai" in base_url:
+            # 1. Ensure Base URL points to API endpoint, not website
+            if not base_url.endswith("/v1"):
+                # Handle cases like "https://openrouter.ai" -> "https://openrouter.ai/api/v1"
+                if base_url.endswith("/api"):
+                    base_url += "/v1"
+                elif not "api/v1" in base_url:
+                    base_url = base_url.rstrip("/") + "/api/v1"
+            
+            # 2. Add required headers for OpenRouter
+            default_headers = {
+                "HTTP-Referer": "http://localhost:5173", # Client URL
+                "X-Title": "TenderWizard" # App Name
+            }
+
         client = AsyncOpenAI(
             api_key=api_key,
-            base_url=base_url
+            base_url=base_url,
+            default_headers=default_headers
         )
         return client, model_name
 

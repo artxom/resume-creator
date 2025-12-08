@@ -42,6 +42,10 @@ const PRESETS = {
         base_url: 'https://api.deepseek.com',
         model_name: 'deepseek-chat'
     },
+    'openrouter': {
+        base_url: 'https://openrouter.ai/api/v1',
+        model_name: 'deepseek/deepseek-chat'
+    },
     'gemini': {
         base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/', 
         model_name: 'gemini-2.0-flash-exp'
@@ -167,6 +171,7 @@ const ConfigPage: React.FC = () => {
                                 onChange={handleProviderChange}
                             >
                                 <MenuItem value="deepseek">DeepSeek</MenuItem>
+                                <MenuItem value="openrouter">OpenRouter (推荐/美国节点)</MenuItem>
                                 <MenuItem value="gemini">Google Gemini</MenuItem>
                                 <MenuItem value="qwen">阿里通义千问 (Qwen)</MenuItem>
                                 <MenuItem value="custom">Custom (OpenAI Compatible)</MenuItem>
