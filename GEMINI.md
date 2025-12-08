@@ -1,6 +1,6 @@
 # TenderWizard Project Documentation
-**Version**: 2.0.0 (The "Universal" Release)
-**Date**: 2025-12-07
+**Version**: 2.2.0 (Mapping Power-Ups)
+**Date**: 2025-12-08
 
 ## 1. 项目愿景 (Vision)
 
@@ -59,8 +59,16 @@ docker-compose up -d --build
 *   **AI 简历生成 (AI Studio)**: 集成 DeepSeek 模型，基于上下文自动撰写、润色简历内容。
 *   **模板渲染 (Template Engine)**: 基于 `docxtpl`，支持 `.docx` 模板的动态渲染与下载。
 *   **通用部署 (Universal Deploy)**: 前端动态代理，后端环境感知，零配置差异。
+*   **模板管理 (Template Management)**: 支持模板的**复制**与**重命名**，保留所有字段映射配置，提升复用性。
 
 ## 5. 版本历史 (Changelog)
+
+### v2.2.0 - Mapping Power-Ups (2025-12-08)
+*   **[Feature]** 「字段映射」页新增**模板复制**与**重命名**功能，大幅提升配置效率。
+    *   **复制**: 一键克隆现有模板及其所有字段映射关系，方便快速创建衍生版本。
+    *   **重命名**: 支持在 UI 上直接修改模板名称，便于版本管理和识别。
+*   **[Fix]** 修复了后端 `copy_template` 接口的事务冲突错误 (500 Internal Server Error)。
+*   **[Refactor]** 修复了前端 MUI Grid 组件在 v7 版本下的过时语法警告。
 
 ### v2.0.0 - Universal Deployment (2025-12-07)
 *   **[Architecture]** 废弃 `deploy.sh` 和 Nginx 反向代理方案。
@@ -73,25 +81,25 @@ docker-compose up -d --build
 *   初步集成 DeepSeek AI。
 *   实现基于 Jinja2 语法的 Word 模板渲染。
 
-## 6. 未来规划 (Roadmap v2.x)
+## 6. 未来规划 (Roadmap)
 
-### v2.1.0 - Multi-AI & Smart Mapping (2025-12-08)
-*   **[新功能]** 新增 AI 模型配置管理页面，支持配置 DeepSeek/Gemini/Qwen 等兼容 OpenAI 协议的多家 AI 提供商 API。
-*   **[Frontend]** AI 实验室和智能简历向导页面，移除硬编码模型，改为从数据库动态加载已配置的 AI 模型进行选择。
-*   **[Backend]** AI 引擎重构，支持根据配置 ID 动态选择并初始化 AI 客户端。
-*   **[Backend]** 智能简历向导的数据组装逻辑 (`_build_resume_context`) 增强，增加自动同名字段映射兜底策略，提升数据填充的容错性和智能化。
-*   **[Smart Mapper]**: 升级智能映射页面
-    *   新增：模板库列表视图 (查看已配置的 Word 模板)。
-    *   新增：详细信息查看 (查看上传的 Word 文件及字段配置详情)。
-    *   新增：在线编辑与保存映射配置。
-*   **[Resume Wizard]**: 优化简历向导
-    *   变更：移除上传步骤，改为从模板库中选择已有模板。
-*   **[Data Manager]**: 数据安全
-    *   变更：屏蔽 `field_mapping` 表的直接访问/删除权限，防止误操作。
+### v3.0 - Nginx Orchestration (Next Milestone)
+**目标**: 实现生产级部署架构，移除对开发服务器端口 (5173) 的依赖。
+*   **[Infrastructure]**: 引入 Nginx 容器作为系统的唯一入口（Reverse Proxy）。
+    *   配置 Nginx 监听 80 端口。
+    *   路由规则：`http://localhost/` 指向前端静态资源，`http://localhost/api` 转发至后端容器。
+*   **[Frontend]**: 从开发模式 (`npm run dev`) 切换为生产构建模式 (`npm run build`)。
+    *   利用 Docker 多阶段构建，仅将编译后的静态文件（HTML/CSS/JS）打包进 Nginx 容器，大幅减小镜像体积并提升加载速度。
+*   **[User Experience]**: 用户无需记忆复杂端口，直接访问 `http://localhost` 即可使用。
 
-### v2.2 - UI/UX 细节打磨
-*   更友好的 Loading 状态。
-*   移动端适配。
+### v4.0 - Unified AI Gateway (The "One API" Integration)
+**目标**: 解决多厂商 AI 接入的协议兼容性与网络稳定性问题（如 OpenRouter 的 401 错误）。
+*   **[Middleware]**: 集成开源项目 **One API** 到 `docker-compose`编排中。
+*   **[Integration]**: 
+    *   后端废除复杂的厂商适配代码，统一对接本地 One API 接口。
+    *   利用 One API 的强大的协议转换和重试机制，彻底解决跨国网络连接的不稳定性。
+*   **[Management]**: 提供可视化的 Key 管理后台，支持渠道负载均衡。
 
-### v2.3 - 多模板管理中心
-*   (已部分并在 v2.1 实现)
+### v2.x - 持续优化 (Ongoing)
+*   **[UI/UX]**: 更友好的全局 Loading 状态；移动端响应式布局适配。
+*   **[Security]**: 敏感数据表（映射配置）的访问权限加固。

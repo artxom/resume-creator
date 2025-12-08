@@ -42,6 +42,8 @@ import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DescriptionIcon from '@mui/icons-material/Description';
 import AddIcon from '@mui/icons-material/Add';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import EditIcon from '@mui/icons-material/Edit';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -101,6 +103,12 @@ const FieldMapper: React.FC = () => {
   const [saving, setSaving] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' } | null>(null);
+
+  // Action Dialog States
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionType, setActionType] = useState<'copy' | 'rename'>('copy');
+  const [actionValue, setActionValue] = useState('');
+  const [actionTargetId, setActionTargetId] = useState<number | null>(null);
 
   // Initial Data Load
   useEffect(() => {
@@ -248,6 +256,49 @@ const FieldMapper: React.FC = () => {
           showMsg('Template deleted', 'success');
       } catch (err) {
           showMsg('Delete failed', 'error');
+      }
+  };
+
+  const handleOpenActionDialog = (e: React.MouseEvent, type: 'copy' | 'rename', template: Template) => {
+      e.stopPropagation();
+      setActionType(type);
+      setActionTargetId(template.id);
+      setActionValue(type === 'copy' ? `${template.name} (Copy)` : template.name);
+      setActionDialogOpen(true);
+  };
+
+  const handleActionSubmit = async () => {
+      if (!actionTargetId || !actionValue.trim()) return;
+      setLoading(true);
+      try {
+          const endpoint = actionType === 'copy' ? 'copy' : 'rename';
+          const method = actionType === 'copy' ? 'POST' : 'PUT';
+          
+          const res = await fetch(`${API_BASE_URL}/templates/${actionTargetId}/${endpoint}`, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ new_name: actionValue })
+          });
+
+          if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.detail || 'Operation failed');
+          }
+
+          const result = await res.json();
+          
+          if (actionType === 'copy') {
+              setTemplates(prev => [...prev, result]);
+              showMsg('Template copied successfully', 'success');
+          } else {
+              setTemplates(prev => prev.map(t => t.id === result.id ? result : t));
+              showMsg('Template renamed successfully', 'success');
+          }
+          setActionDialogOpen(false);
+      } catch (error: any) {
+          showMsg(error.message, 'error');
+      } finally {
+          setLoading(false);
       }
   };
 
@@ -499,9 +550,17 @@ const FieldMapper: React.FC = () => {
                         key={tpl.id} 
                         disablePadding
                         secondaryAction={
-                            <IconButton edge="end" aria-label="delete" size="small" onClick={(e) => handleDeleteTemplate(e, tpl.id)}>
-                                <DeleteIcon fontSize="small" />
-                            </IconButton>
+                            <Stack direction="row" spacing={0}>
+                                <IconButton aria-label="copy" size="small" onClick={(e) => handleOpenActionDialog(e, 'copy', tpl)}>
+                                    <ContentCopyIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton aria-label="rename" size="small" onClick={(e) => handleOpenActionDialog(e, 'rename', tpl)}>
+                                    <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton edge="end" aria-label="delete" size="small" onClick={(e) => handleDeleteTemplate(e, tpl.id)}>
+                                    <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </Stack>
                         }
                       >
                           <ListItemButton selected={selectedTemplateId === tpl.id} onClick={() => handleTemplateSelect(tpl.id)}>
@@ -510,7 +569,7 @@ const FieldMapper: React.FC = () => {
                               </ListItemIcon>
                               <ListItemText 
                                 primary={tpl.name} 
-                                primaryTypographyProps={{ variant: 'body2', noWrap: true, fontWeight: selectedTemplateId === tpl.id ? 'bold' : 'normal' }}
+                                primaryTypographyProps={{ variant: 'body2', noWrap: true, fontWeight: selectedTemplateId === tpl.id ? 'bold' : 'normal', pr: 8 }}
                                 secondary={tpl.filename}
                                 secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
                               />
@@ -565,6 +624,25 @@ const FieldMapper: React.FC = () => {
           </Box>
 
       </Paper>
+
+      <Dialog open={actionDialogOpen} onClose={() => setActionDialogOpen(false)}>
+        <DialogTitle>{actionType === 'copy' ? '复制模板' : '重命名模板'}</DialogTitle>
+        <DialogContent>
+            <TextField
+                autoFocus
+                margin="dense"
+                label="模板名称"
+                fullWidth
+                variant="standard"
+                value={actionValue}
+                onChange={(e) => setActionValue(e.target.value)}
+            />
+        </DialogContent>
+        <DialogActions>
+            <Button onClick={() => setActionDialogOpen(false)}>取消</Button>
+            <Button onClick={handleActionSubmit}>{actionType === 'copy' ? '复制' : '保存'}</Button>
+        </DialogActions>
+      </Dialog>
 
       {snackbar && (
         <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>

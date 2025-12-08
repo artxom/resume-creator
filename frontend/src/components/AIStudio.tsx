@@ -184,7 +184,7 @@ const AIStudio: React.FC = () => {
         <Box sx={{ flexGrow: 1, p: 2 }}>
             <Grid container spacing={3}>
                 {/* 1. Context Selection */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
                         <Typography variant="h6" gutterBottom color="primary">1. 选择数据源</Typography>
                         <Typography variant="body2" color="text.secondary" paragraph>
@@ -227,7 +227,7 @@ const AIStudio: React.FC = () => {
                 </Grid>
 
                 {/* 2. Prompt Engineering */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom color="primary">2. 配置生成指令</Typography>
                         
@@ -293,7 +293,7 @@ const AIStudio: React.FC = () => {
                 </Grid>
 
                 {/* 3. Review & Apply */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom color="primary">3. 结果预览与采纳</Typography>
                         {generatedData ? (

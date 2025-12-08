@@ -174,6 +174,12 @@ class ContextFillRequest(BaseModel):
     field_instructions: Optional[Dict[str, Any]] = {}
     config_id: Optional[int] = None
 
+class TemplateCopyRequest(BaseModel):
+    new_name: str
+
+class TemplateRenameRequest(BaseModel):
+    new_name: str
+
 # --- Helper Functions ---
 def _get_primary_key(inspector, table_name: str, schema: str = "public") -> Optional[str]:
     """Gets the primary key column name for a table. Returns None if not found."""
@@ -614,6 +620,63 @@ def get_template_mappings(template_id: int, db: Session = Depends(get_db)):
         }
         for m in mappings
     ]
+
+@app.post("/api/v1/templates/{template_id}/copy", response_model=TemplateResponse)
+def copy_template(template_id: int, req: TemplateCopyRequest, db: Session = Depends(get_db)):
+    original_template = db.query(Template).filter(Template.id == template_id).first()
+    if not original_template:
+        raise HTTPException(status_code=404, detail="Original template not found")
+
+    # Check for duplicate name
+    if db.query(Template).filter(Template.name == req.new_name).first():
+        raise HTTPException(status_code=400, detail=f"Template with name '{req.new_name}' already exists.")
+
+    try:
+        # Create a new template record
+        new_template = Template(
+            name=req.new_name,
+            filename=original_template.filename,
+            file_content=original_template.file_content
+        )
+        db.add(new_template)
+        db.flush() # Flush to get the new_template.id
+
+        # Copy associated field mappings
+        original_mappings = db.query(FieldMapping).filter(FieldMapping.template_id == template_id).all()
+        for original_map in original_mappings:
+            new_map = FieldMapping(
+                template_id=new_template.id,
+                table_name=original_map.table_name,
+                mapping_data=original_map.mapping_data,
+                ai_instructions=original_map.ai_instructions
+            )
+            db.add(new_map)
+        
+        db.commit()
+        db.refresh(new_template)
+        return new_template
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to copy template: {str(e)}")
+
+@app.put("/api/v1/templates/{template_id}/rename", response_model=TemplateResponse)
+def rename_template(template_id: int, req: TemplateRenameRequest, db: Session = Depends(get_db)):
+    template = db.query(Template).filter(Template.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    # Check for duplicate name (if trying to rename to an existing name)
+    if db.query(Template).filter(Template.name == req.new_name, Template.id != template_id).first():
+        raise HTTPException(status_code=400, detail=f"Template with name '{req.new_name}' already exists.")
+
+    try:
+        template.name = req.new_name
+        db.commit()
+        db.refresh(template)
+        return template
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to rename template: {str(e)}")
 
 # --- Field Mapping Endpoints ---
 @app.get("/api/v1/mappings/fields")

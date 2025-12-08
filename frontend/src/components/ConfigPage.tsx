@@ -158,7 +158,7 @@ const ConfigPage: React.FC = () => {
         <Box sx={{ p: 3 }}>
             <Grid container spacing={4}>
                 {/* Left: Form */}
-                <Grid item xs={12} md={5}>
+                <Grid size={{ xs: 12, md: 5 }}>
                     <Paper sx={{ p: 3 }}>
                         <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <ExtensionIcon /> 添加/更新模型配置
@@ -228,7 +228,7 @@ const ConfigPage: React.FC = () => {
                 </Grid>
 
                 {/* Right: List */}
-                <Grid item xs={12} md={7}>
+                <Grid size={{ xs: 12, md: 7 }}>
                     <Paper sx={{ p: 3 }}>
                         <Typography variant="h6" gutterBottom>
                             已保存的模型
