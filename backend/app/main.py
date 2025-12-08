@@ -276,6 +276,32 @@ def _build_resume_context(
                 if project_context_row:
                     project_rows.append(project_context_row)
 
+    # --- Auto-Sort Projects (Reverse Chronological) ---
+    # Heuristic: Look for fields resembling a date and sort descending.
+    if project_rows:
+        def get_sort_key(row):
+            # 1. Try to find a specific 'start_date' or 'end_date' field first
+            priority_keys = ['end_date', 'start_date', 'date', 'time', '结束时间', '开始时间', '日期', '时间']
+            
+            # 2. Search for exact or partial matches
+            for key in row.keys():
+                key_lower = key.lower()
+                for pk in priority_keys:
+                    if pk in key_lower:
+                        val = row[key]
+                        # Handle 'Present' or '至今' as the far future
+                        if isinstance(val, str) and any(s in val for s in ['至今', 'Present', 'Now', 'Current']):
+                            return "9999-12-31" 
+                        return str(val) if val else "0000-00-00"
+            return "0000-00-00"
+
+        try:
+            # Sort in place: Newest dates first (Descending)
+            project_rows.sort(key=get_sort_key, reverse=True)
+            print("DEBUG: Auto-sorted project rows by detected date field.")
+        except Exception as e:
+            print(f"Warning: Failed to auto-sort projects: {e}")
+
     # 3. Build Context
     context = {}
     
