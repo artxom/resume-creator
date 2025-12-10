@@ -286,7 +286,7 @@ const ResumeWizard: React.FC = () => {
 
         // Set default prompt based on missing fields
         if (missing.length > 0) {
-            setAiPrompt(`请根据候选人的背景信息，补全以下缺失内容：${missingDetails.join(', ')}。对于项目经历，请根据项目名称和候选人技能推断合理的描述。`);
+            setAiPrompt(`候选人的岗位是「」，他有 次工作变动，他的岗位要求包括：\n\n请补全以下缺失内容：${missingDetails.join(', ')}。对于项目经历，请根据项目名称和候选人技能推断合理的描述`);
         } else {
             setAiPrompt('当前没有检测到缺失字段，但你可以让我优化现有内容。');
         }
