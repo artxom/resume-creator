@@ -72,6 +72,23 @@ interface TableColumnMap {
   [tableName: string]: string[];
 }
 
+/**
+ * FieldMapper Component
+ * 
+ * This is the core configuration component of the TenderWizard application.
+ * It manages the complex relationship between:
+ * 1. Uploaded Data Tables (Source)
+ * 2. Word Document Templates (Destination)
+ * 3. Field-level Mapping Rules (Logic)
+ * 4. AI Generation Prompts (Enrichment)
+ * 
+ * Architecture Overview:
+ * - **State Management**: Heavily relies on local state for UI responsiveness. 
+ *   Major state groups: Template Selection, Table Selection, Field Mappings (Person/Project split), AI Instructions.
+ * - **Context Separation**: Distinguishes between 'Person' (Singleton) data and 'Project' (List/Loop) data.
+ *   This mirrors the Resume structure: One candidate, multiple projects.
+ * - **Data Flow**: Load Templates -> Select Template -> Parse Placeholders -> Map Source Columns -> Configure AI -> Save.
+ */
 const FieldMapper: React.FC = () => {
   const [tables, setTables] = useState<string[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);

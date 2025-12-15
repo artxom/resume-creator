@@ -1,28 +1,26 @@
-import re
-import zipfile
 import io
-import xml.etree.ElementTree as ET
 from typing import List
+from docxtpl import DocxTemplate
 
 def extract_placeholders_in_order(docx_bytes: bytes) -> List[str]:
     """
-    Parses word/document.xml from a docx file (in bytes) to extract 
-    Jinja2 placeholders {{ ... }} in order.
+    Uses docxtpl to robustly extract Jinja2 placeholders {{ ... }} from a docx file.
+    This method is superior to manual XML parsing because it handles:
+    1. Split XML tags (common in Word).
+    2. Complex Jinja2 syntax.
+    3. Consistency with the actual rendering engine.
     """
     try:
-        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as zf:
-            xml_content = zf.read('word/document.xml')
-            root = ET.fromstring(xml_content)
-            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-            
-            # Extract all text from <w:t> tags
-            full_text = "".join(node.text for node in root.findall('.//w:t', ns) if node.text)
-            
-            # Find all {{ ... }} patterns
-            found = [p.strip() for p in re.findall(r'\{\{(.*?)\}\}', full_text)]
-            
-            # Deduplicate while preserving order
-            return list(dict.fromkeys(found))
+        # Load the docx file from bytes
+        doc = DocxTemplate(io.BytesIO(docx_bytes))
+        
+        # docxtpl provides a native method to find all variables that would be needed for rendering
+        # This returns a set of keys
+        undeclared_vars = doc.get_undeclared_template_variables()
+        
+        # Convert to sorted list for consistent UI presentation
+        return sorted(list(undeclared_vars))
+        
     except Exception as e:
-        print(f"Error extracting placeholders: {e}")
+        print(f"Error extracting placeholders with docxtpl: {e}")
         return []

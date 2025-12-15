@@ -1,13 +1,42 @@
-import os
+import logging
 import json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from openai import AsyncOpenAI
 
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 class AIEngine:
+    """
+    Core engine for interacting with AI models (DeepSeek, OpenAI, etc.).
+    Handles client initialization, OpenRouter specific adaptations, and prompt construction.
+    """
     def __init__(self):
         self.system_instruction = "You are an expert HR consultant and professional resume writer. Your goal is to help users complete their resume data structure with professional, concise, and impactful language. You must always return valid JSON."
 
-    def _get_client(self, api_config: Optional[Dict[str, str]] = None) -> tuple[AsyncOpenAI, str]:
+    def _configure_openrouter_client(self, base_url: str) -> Tuple[str, Dict[str, str]]:
+        """
+        Helper method to normalize Base URL and headers for OpenRouter.ai.
+        """
+        headers = {}
+        if "openrouter.ai" in base_url:
+            # 1. Ensure Base URL points to API endpoint, not website
+            if not base_url.endswith("/v1"):
+                # Handle cases like "https://openrouter.ai" -> "https://openrouter.ai/api/v1"
+                if base_url.endswith("/api"):
+                    base_url += "/v1"
+                elif "api/v1" not in base_url:
+                    base_url = base_url.rstrip("/") + "/api/v1"
+            
+            # 2. Add required headers for OpenRouter
+            headers = {
+                "HTTP-Referer": "http://localhost:5173", # Client URL
+                "X-Title": "TenderWizard" # App Name
+            }
+        return base_url, headers
+
+    def _get_client(self, api_config: Optional[Dict[str, str]] = None) -> Tuple[AsyncOpenAI, Optional[str]]:
         """
         Returns an AsyncOpenAI client and the model name based on provided config.
         """
@@ -21,24 +50,11 @@ class AIEngine:
             model_name = api_config.get("model_name", "").strip()
         
         if not api_key:
+            logger.error("No API Key found in configuration.")
             raise ValueError("No AI Configuration found. Please configure an AI model in the 'System Settings' (系统设置) page.")
 
-        # --- OpenRouter Specific Fixes ---
-        default_headers = {}
-        if "openrouter.ai" in base_url:
-            # 1. Ensure Base URL points to API endpoint, not website
-            if not base_url.endswith("/v1"):
-                # Handle cases like "https://openrouter.ai" -> "https://openrouter.ai/api/v1"
-                if base_url.endswith("/api"):
-                    base_url += "/v1"
-                elif not "api/v1" in base_url:
-                    base_url = base_url.rstrip("/") + "/api/v1"
-            
-            # 2. Add required headers for OpenRouter
-            default_headers = {
-                "HTTP-Referer": "http://localhost:5173", # Client URL
-                "X-Title": "TenderWizard" # App Name
-            }
+        # Handle OpenRouter specifics if needed
+        base_url, default_headers = self._configure_openrouter_client(base_url)
 
         client = AsyncOpenAI(
             api_key=api_key,
@@ -70,6 +86,11 @@ class AIEngine:
             
             # Use passed model_name if available, otherwise use config's model
             target_model = model_name if model_name else config_model_name
+            
+            if not target_model:
+                raise ValueError("Model name is missing in both request and configuration.")
+
+            logger.info(f"Generating content using model: {target_model} for fields: {target_fields}")
 
             # Safe serialization of record data
             context_str = json.dumps(record_data, ensure_ascii=False, indent=2, default=json_serial)
@@ -120,10 +141,11 @@ class AIEngine:
             )
 
             content = response.choices[0].message.content
+            logger.info("AI generation successful.")
             return json.loads(content)
             
         except Exception as e:
-            print(f"AI Generation Error: {e}")
+            logger.exception(f"AI Generation Error: {e}")
             return {"error": str(e)}
 
 # Singleton instance

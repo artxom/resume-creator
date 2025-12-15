@@ -1,56 +1,55 @@
 # TenderWizard Project Documentation
-**Version**: 2.2.0 (Mapping Power-Ups)
-**Date**: 2025-12-08
+**Version**: 3.0.0 (Production Ready)
+**Date**: 2025-12-11
 
 ## 1. 项目愿景 (Vision)
 
 **TenderWizard** 是一个智能化的简历自动生成与数据管理系统。
-v2.0 版本的核心里程碑是实现了 **"Universal Deployment" (统一架构)**：无论是本地 Mac 开发环境，还是 Linux 生产服务器，均使用**同一套代码、同一个 Docker Compose 配置**，彻底消除了环境差异带来的部署痛点。
+v3.0 版本标志着项目进入**生产就绪 (Production Ready)** 阶段，实现了基于 Nginx 的全容器化编排，具备了企业级的稳定性和部署便捷性。
 
-## 2. 核心架构 (Architecture v2.0)
+## 2. 核心架构 (Architecture v3.0)
 
 ### 2.1 技术栈
 *   **Frontend**: React 19 (Vite) + Material-UI (MUI)
-    *   *Key Pattern*: **Proxy Forwarding**. 前端通过相对路径 `/api` 发起请求，由 Vite Server 代理转发至后端。
+    *   *Production Build*: Nginx Serving Static Assets (Multi-stage Docker Build)
 *   **Backend**: FastAPI (Python 3.9)
-    *   *Key Pattern*: **Fault Tolerance**. AI 模块具备容错机制，数据库连接具备重试机制。
+    *   *AI Engine*: 增强型 AI 网关，支持 OpenRouter/DeepSeek 等多厂商协议自动适配。
+    *   *Doc Engine*: 基于 `docxtpl` 原生解析的健壮模板引擎。
 *   **Database**: PostgreSQL 13 (Dockerized)
-*   **AI Engine**: DeepSeek API (OpenAI Compatible Interface)
-*   **Infrastructure**: Docker Compose (Single Source of Truth)
+*   **Infrastructure**: Docker Compose (Dev & Prod)
 
-### 2.2 统一网络拓扑
+### 2.2 统一网络拓扑 (Production)
 ```text
-[User Browser] --(http:5173)--> [Frontend Container (Vite)]
-                                      | (Proxy /api)
-                                      v
-                             [Backend Container (FastAPI)] --(Internal Network)--> [PostgreSQL]
+[User Browser] --(http:80)--> [Nginx Container]
+                                |
+                                +--(/)--> [Static Files (React Dist)]
+                                |
+                                +--(/api)--> [Backend Container] --(Internal)--> [PostgreSQL]
 ```
 
 ## 3. 快速开始 (Quick Start)
-
-适用于 **所有环境** (Local Dev & Remote Prod)。
 
 ### 3.1 环境准备
 1.  安装 Docker & Docker Compose。
 2.  确保 `resume_creator/` 目录下存在 `.env` 文件：
     ```ini
-    # resume_creator/.env
     DEEPSEEK_API_KEY=sk-your-key-here
-    # Optional:
-    # POSTGRES_USER=user
-    # POSTGRES_PASSWORD=password
     ```
 
-### 3.2 启动/更新
+### 3.2 生产环境部署
 ```bash
 cd resume_creator
-# 一键构建并启动
-docker-compose up -d --build
+# 使用生产配置文件启动 (包含 Nginx)
+docker-compose -f docker-compose.prod.yml up -d --build
 ```
+*访问*: 直接浏览器打开 `http://localhost` (无需端口号)
 
-### 3.3 访问
-*   **应用主页**: `http://<YOUR_IP>:5173` (本地为 localhost, 服务器为公网IP)
-*   **API 文档**: `http://<YOUR_IP>:8000/docs`
+### 3.3 开发环境启动
+```bash
+# 使用开发配置文件启动 (Vite HMR)
+docker-compose up -d
+```
+*访问*: `http://localhost:5173`
 
 ## 4. 功能清单 (Features)
 
@@ -59,47 +58,37 @@ docker-compose up -d --build
 *   **AI 简历生成 (AI Studio)**: 集成 DeepSeek 模型，基于上下文自动撰写、润色简历内容。
 *   **模板渲染 (Template Engine)**: 基于 `docxtpl`，支持 `.docx` 模板的动态渲染与下载。
 *   **通用部署 (Universal Deploy)**: 前端动态代理，后端环境感知，零配置差异。
-*   **模板管理 (Template Management)**: 支持模板的**复制**与**重命名**，保留所有字段映射配置，提升复用性。
+*   **模板管理 (Template Management)**: 支持模板的复制、重命名与全量配置克隆。
 
 ## 5. 版本历史 (Changelog)
 
+### v3.0.0 - Production Ready (2025-12-11)
+*   **[Milestone]** 完成 **Nginx 生产编排**，实现前后端完全分离部署。
+*   **[Fix]** 重构 `docx_utils.py`，移除脆弱的正则解析，改用 `docxtpl.get_undeclared_template_variables()`，彻底解决 Word 标签截断导致解析失败的 Bug。
+*   **[Refactor]** 重构 `AIEngine`，增加结构化日志，抽离 OpenRouter 适配逻辑。
+*   **[Docs]** 移除 `deploy.sh`，统一使用 Docker Compose 管理生命周期。
+*   **[Code]** 为核心组件 `FieldMapper` 添加架构级注释，明确状态管理逻辑。
+
 ### v2.2.0 - Mapping Power-Ups (2025-12-08)
-*   **[Feature]** 「字段映射」页新增**模板复制**与**重命名**功能，大幅提升配置效率。
-    *   **复制**: 一键克隆现有模板及其所有字段映射关系，方便快速创建衍生版本。
-    *   **重命名**: 支持在 UI 上直接修改模板名称，便于版本管理和识别。
-*   **[Fix]** 修复了后端 `copy_template` 接口的事务冲突错误 (500 Internal Server Error)。
-*   **[Refactor]** 修复了前端 MUI Grid 组件在 v7 版本下的过时语法警告。
+*   **[Feature]** 新增模板复制与重命名功能。
+*   **[Fix]** 修复数据库事务冲突。
 
 ### v2.0.0 - Universal Deployment (2025-12-07)
-*   **[Architecture]** 废弃 `deploy.sh` 和 Nginx 反向代理方案。
-*   **[Frontend]** 全面重构 API 调用逻辑，移除硬编码 `localhost`，采用 Vite Proxy + 相对路径 (`/api/v1`)。
-*   **[Backend]** 增加环境变量 (`.env`) 支持，增加 AI Key 缺失时的容错处理。
-*   **[DevOps]** 统一使用 `docker-compose.yml` 管理所有环境。
+*   **[Architecture]** 确立 Docker Compose 统一架构。
 
-### v1.x - The Foundation
-*   实现基础的 CRUD、Excel 导入导出。
-*   初步集成 DeepSeek AI。
-*   实现基于 Jinja2 语法的 Word 模板渲染。
+## 6. 开发经验沉淀 (Lessons Learned)
 
-## 6. 未来规划 (Roadmap)
+本项目从 v1.0 到 v3.0 的演进过程中，沉淀了以下关键经验，作为后续同类项目的参考基石。
 
-### v3.0 - Nginx Orchestration (Next Milestone)
-**目标**: 实现生产级部署架构，移除对开发服务器端口 (5173) 的依赖。
-*   **[Infrastructure]**: 引入 Nginx 容器作为系统的唯一入口（Reverse Proxy）。
-    *   配置 Nginx 监听 80 端口。
-    *   路由规则：`http://localhost/` 指向前端静态资源，`http://localhost/api` 转发至后端容器。
-*   **[Frontend]**: 从开发模式 (`npm run dev`) 切换为生产构建模式 (`npm run build`)。
-    *   利用 Docker 多阶段构建，仅将编译后的静态文件（HTML/CSS/JS）打包进 Nginx 容器，大幅减小镜像体积并提升加载速度。
-*   **[User Experience]**: 用户无需记忆复杂端口，直接访问 `http://localhost` 即可使用。
+### 6.1 架构设计 (Architecture)
+*   **Single Source of Truth**: 坚持使用 `docker-compose.yml` 管理所有依赖。不要维护分散的 Shell 脚本。
+*   **Proxy Forwarding**: 前端代码中严禁硬编码后端 URL。始终使用相对路径 `/api/...`，通过开发环境的 Vite Proxy 和生产环境的 Nginx Reverse Proxy 进行流量分发。
 
-### v4.0 - Unified AI Gateway (The "One API" Integration)
-**目标**: 解决多厂商 AI 接入的协议兼容性与网络稳定性问题（如 OpenRouter 的 401 错误）。
-*   **[Middleware]**: 集成开源项目 **One API** 到 `docker-compose`编排中。
-*   **[Integration]**: 
-    *   后端废除复杂的厂商适配代码，统一对接本地 One API 接口。
-    *   利用 One API 的强大的协议转换和重试机制，彻底解决跨国网络连接的不稳定性。
-*   **[Management]**: 提供可视化的 Key 管理后台，支持渠道负载均衡。
+### 6.2 核心逻辑 (Core Logic)
+*   **Avoid Regex on XML**: 解析 Word (`.docx`) 或其他 XML 格式文档时，**严禁使用正则表达式**。Word 的内部 XML 结构极其易变（如 Run Splitting），正则匹配必然会导致生产事故。必须使用专门的 XML 解析库或模板引擎的原生方法。
+*   **AI Gateway Pattern**: 不同的 AI 提供商（OpenAI, Anthropic, OpenRouter）在 API 细节上存在微小但致命的差异（如 Base URL 结尾是否带 `/v1`，Header 要求等）。必须在代码中构建统一的 "AI Gateway" 层来屏蔽这些差异，保证业务逻辑的纯粹性。
 
-### v2.x - 持续优化 (Ongoing)
-*   **[UI/UX]**: 更友好的全局 Loading 状态；移动端响应式布局适配。
-*   **[Security]**: 敏感数据表（映射配置）的访问权限加固。
+### 6.3 前端工程 (Frontend)
+*   **Beware of God Components**: 像 `FieldMapper` 这样集成了数据获取、状态管理、UI 交互和业务逻辑的巨型组件，是维护性的噩梦。
+    *   *建议*: 在项目早期引入 Custom Hooks (如 `useTemplateMapping`) 来抽离数据逻辑，让组件只负责渲染。
+*   **Type Safety**: 对于复杂的数据结构（如本项目的映射关系表），TypeScript 的严格定义是避免运行时错误的最后一道防线。
